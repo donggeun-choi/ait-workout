@@ -1,0 +1,51 @@
+<!-- ait:design-guide v1 -->
+앱인토스 미니앱 프로젝트다. 하드 규칙 위반은 `/ait:design`이 자동으로 고친다.
+
+하드 규칙:
+- 텍스트 11px 이하 금지, 본문은 15px 이상
+- 모든 이모지는 Tossface로 렌더(폰트 스택 배선 또는 `.tf`)
+- 한글은 `word-break: keep-all`
+- 터치 타깃 44px 이상
+- 하단 CTA는 safe area 34px
+- 광고가 첫 화면 콘텐츠(ATF)를 가리지 않음
+- 다크패턴(가짜 버튼·막다른 화면) 금지
+- 꺾쇠·화살표는 텍스트 글리프 대신 SVG(currentColor)
+- 상단 네비는 직접 그리지 않음(플랫폼 자동 배치)
+- font-weight는 400~700만 사용
+
+토큰 사용:
+- 텍스트 색: `--color-text-strong/default/subtle/hint/disabled/inverse`
+- 배경 색: `--color-bg`, `--color-bg-canvas`
+- 상태 색: `--color-danger`/`--color-success`/`--color-warning`
+- 브랜드 색: `--brand-primary`(중립 기본값, 바꿔도 됨)
+- 타이포: `--font-size-*`/`--font-weight-*` 6단계(display~caption)
+- 간격: `--space-1`~`--space-6`(4/8/12/16/24/32px)
+- 오버레이: `--dim`(#000 대신)
+- 인라인 style 객체에서도 `var()`가 그대로 동작한다
+
+이 프로젝트는 TDS 기반이다 — 색·크기·아이콘은 TDS 컴포넌트가 주는 것을 쓴다(위 토큰 목록과 아이콘 파일 경로는 이 프로젝트에 없다).
+1층 하드 규칙은 플랫폼 제약이라 그대로 적용된다 — 꺾쇠·닫기·검색은 TDS 아이콘 컴포넌트로 충족하고, 텍스트 글리프로 대체하는 것은 여전히 금지다.
+
+전문(3층 전체 규칙): `docs/design-guide.md`.
+판단이 애매하면 화면을 그리기 전에 먼저 읽는다.
+
+다음 단계:
+`/ait:design`   말로: "화면이 좀 구려 보여. 예쁘게 고쳐줘."
+`/ait:design`   말로: "등록용 로고랑 스크린샷 만들어줘"
+<!-- /ait:design-guide -->
+
+## 개발 하네스
+
+- React DOM 기반 Apps in Toss 미니앱이다. TDS 컴포넌트는 설치된 패키지의 타입 선언으로 API를 확인한다.
+- Node 24 이상, npm과 `package-lock.json`을 사용한다. `bash scripts/setup.sh`로 잠금 파일 기준 설치한다.
+- `bash scripts/dev.sh --host 127.0.0.1`로 실행한다. 실제 출력된 포트로 화면을 확인한다.
+- 작업 후 `bash scripts/check.sh`로 ESLint, TypeScript, 웹 빌드, `.ait` 생성까지 확인한다.
+- 이 컴퓨터의 기본 Node가 오래된 경우 스크립트가 설치된 Homebrew Node를 선택한다. 다른 컴퓨터에서는 `.nvmrc`를 사용한다.
+- 앱 화면과 기록 흐름은 `src/App.tsx`, 스타일은 `src/App.css`와 `src/index.css`, 플랫폼 설정은 `apps-in-toss.config.ts`에 있다.
+- 운동 화면의 요소 역할과 글자 크기 기준은 `docs/workout-screen-design.md`를 따른다. TDS blue primary는 사용자가 선택한 브랜드 테마다.
+- 시각 변경은 해당 화면을 모바일 크기로 캡처하고 실제 렌더 크기·터치 영역·CTA 겹침을 확인한다. 기능 변경은 관련 흐름과 저장·복원을 확인한다.
+- 브라우저 검증에는 별도 로컬 포트/프로필을 사용하여 사용자가 기록 중인 운동을 건드리지 않는다.
+- `.env`, `node_modules`, `dist`, `.ait` 번들은 커밋하지 않는다. 자격 증명을 코드나 문서에 넣지 않는다.
+- GitHub CI는 설치 및 전체 검증을 수행한다. 콘솔 등록이나 배포는 별도 요청이 있을 때 진행한다.
+
+자세한 실행 경로: `docs/harness.md`.

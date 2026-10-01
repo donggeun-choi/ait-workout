@@ -1,0 +1,56 @@
+@import url("https://cdn.jsdelivr.net/gh/toss/tossface/dist/tossface.css");
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  color: #26332d;
+  background: #f3f5f3;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100dvh;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+button,
+input,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #3182f6;
+  outline-offset: 3px;
+}
+button {
+  -webkit-appearance: none;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+button:disabled {
+  cursor: default;
+}
+
+.tf {
+  font-family: Tossface;
+}
+
+body,
+.app-shell {
+  font-family:
+    -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important;
+}

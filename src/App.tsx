@@ -53,6 +53,35 @@ const catalog = [
 ];
 const routines = [
   {
+    name: "등 데이",
+    subtitle: "등 중심",
+    names: ["랫 풀다운", "시티드 로우"],
+    tag: "등",
+  },
+  {
+    name: "가슴 데이",
+    subtitle: "가슴 중심",
+    names: ["벤치 프레스", "인클라인 덤벨 프레스"],
+    tag: "가슴",
+  },
+  {
+    name: "푸시데이",
+    subtitle: "가슴 · 어깨 · 삼두",
+    names: [
+      "벤치 프레스",
+      "인클라인 덤벨 프레스",
+      "숄더 프레스",
+      "트라이셉스 푸시다운",
+    ],
+    tag: "푸시데이",
+  },
+  {
+    name: "풀데이",
+    subtitle: "등 · 이두",
+    names: ["랫 풀다운", "시티드 로우", "덤벨 컬"],
+    tag: "풀데이",
+  },
+  {
     name: "상체 루틴",
     subtitle: "가슴 · 등 · 어깨",
     names: ["벤치 프레스", "랫 풀다운", "시티드 로우", "숄더 프레스"],
@@ -70,6 +99,10 @@ const routines = [
     names: ["스쿼트", "벤치 프레스", "랫 풀다운"],
     tag: "전신",
   },
+];
+const routineOptions: (number | null)[] = [
+  null,
+  ...routines.map((_, index) => index),
 ];
 function makeExercise(name: string): Exercise {
   const item = catalog.find((x) => x.name === name)!;
@@ -648,6 +681,34 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
       </div>
     </div>
   );
+  function themePicker(expanded: boolean) {
+    return (
+      <details className="theme-picker" open={expanded || undefined}>
+        <summary>
+          추천 테마로 구성하기
+          <Icon name="plus" size={16} />
+        </summary>
+        <div className="theme-options">
+          {["등", "가슴", "하체", "푸시데이", "풀데이"].map((theme) => (
+            <Button
+              key={theme}
+              size="medium"
+              color="dark"
+              variant="weak"
+              onClick={() => {
+                navigate("routines");
+                setPendingRoutine(
+                  routines.findIndex((routine) => routine.tag === theme),
+                );
+              }}
+            >
+              {theme}
+            </Button>
+          ))}
+        </div>
+      </details>
+    );
+  }
   return (
     <div className="app-shell" data-page={page}>
       <main ref={mainRef}>
@@ -842,6 +903,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                 onClick={() => navigate("routines")}
               />
             </section>
+            {themePicker(true)}
             <p className="workout-help">
               {selectedRoutine === null
                 ? "운동을 시작하면 종목과 세트를 추가할 수 있어요."
@@ -866,7 +928,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
               role="radiogroup"
               aria-label="루틴 선택"
             >
-              {[null, 0, 1, 2].map((index, optionPosition) => {
+              {routineOptions.map((index, optionPosition) => {
                 const routine = index === null ? null : routines[index];
                 const selected = pendingRoutine === index;
                 return (
@@ -890,8 +952,10 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                       const direction = directions[event.key];
                       if (!direction) return;
                       event.preventDefault();
-                      const next = (optionPosition + direction + 4) % 4;
-                      setPendingRoutine([null, 0, 1, 2][next]);
+                      const next =
+                        (optionPosition + direction + routineOptions.length) %
+                        routineOptions.length;
+                      setPendingRoutine(routineOptions[next]);
                       document
                         .getElementById(`routine-option-${next}`)
                         ?.focus();
@@ -1033,6 +1097,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                     />
                   ))}
                 </div>
+                {themePicker(false)}
               </section>
             )}
             {draft.exercises.map((ex) => (
@@ -1352,6 +1417,14 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
           onClick={() => {
             if (page === "routines") {
               setSelectedRoutine(pendingRoutine);
+              if (draft && !draft.exercises.length && pendingRoutine !== null) {
+                const routine = routines[pendingRoutine];
+                updateDraft((current) => ({
+                  ...current,
+                  name: routine.name,
+                  exercises: routine.names.map(makeExercise),
+                }));
+              }
               leaveRoutines();
             } else if (draft && !draft.exercises.length) {
               setPicker(true);

@@ -1092,3 +1092,29 @@ textarea {
   font-size: 16px !important;
   line-height: 1.5;
 }
+
+.theme-picker {
+  margin: 20px 24px 0;
+}
+.quick-exercises .theme-picker {
+  margin: 20px 0 0;
+}
+.theme-picker summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--subtle);
+  list-style: none;
+}
+.theme-picker summary::-webkit-details-marker {
+  display: none;
+}
+.theme-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+}

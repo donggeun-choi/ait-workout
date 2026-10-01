@@ -16,6 +16,21 @@
   --space-md: 16px;
   --space-lg: 24px;
 }
+.dashboard-ad {
+  margin: 24px -24px 0;
+  width: calc(100% + 48px);
+}
+.dashboard-ad > div {
+  width: 100%;
+  min-height: 96px;
+}
+@media (max-width: 360px) {
+  .dashboard-ad {
+    margin-left: -18px;
+    margin-right: -18px;
+    width: calc(100% + 36px);
+  }
+}
 .app-shell {
   max-width: 480px;
   min-height: 100dvh;

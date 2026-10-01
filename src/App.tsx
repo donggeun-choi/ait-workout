@@ -10,6 +10,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { graniteEvent } from "@apps-in-toss/web-framework";
 import "./App.css";
+import { BannerAd } from "./BannerAd";
 
 type SetRow = { id: string; weight: string; reps: string; done: boolean };
 type Exercise = { id: string; name: string; muscle: string; sets: SetRow[] };
@@ -1231,6 +1232,7 @@ function App() {
             </p>
           </>
         )}
+        {page === "dashboard" && !draft && !demo && <BannerAd />}
       </main>
       {page !== "routines" && (
         <nav className="bottom-nav" aria-label="주요 메뉴">

@@ -42,6 +42,8 @@ npm run build
 
 ## 참고
 
+공식 SDK 연결 현황과 대시보드 광고 슬롯 설정은 [docs/sdk-integration.md](docs/sdk-integration.md)에 정리했습니다. 운영 광고 그룹 ID가 없으면 광고는 비활성화됩니다.
+
 - [Strong Google Play 소개](https://play.google.com/store/apps/details?id=io.strongapp.strong&hl=ko)
 - [TDS 컴포넌트](https://developers-apps-in-toss.toss.im/design/components)
 

@@ -56,6 +56,7 @@
 
 ## 개발 하네스
 
+- 플랫폼 API·SDK와 광고 슬롯의 연결 현황은 `docs/sdk-integration.md`를 읽는다. 광고는 운동 기록 흐름을 막지 않으며 운영 ID 없이 활성화하지 않는다.
 - React DOM 기반 Apps in Toss 미니앱이다. TDS 컴포넌트는 설치된 패키지의 타입 선언으로 API를 확인한다.
 - Node 24 이상, npm과 `package-lock.json`을 사용한다. `bash scripts/setup.sh`로 잠금 파일 기준 설치한다.
 - `bash scripts/dev.sh --host 127.0.0.1`로 실행한다. 실제 출력된 포트로 화면을 확인한다.

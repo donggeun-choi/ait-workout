@@ -1,4 +1,9 @@
 :root {
+  --safe-top: max(var(--host-safe-top, 0px), env(safe-area-inset-top, 0px));
+  --safe-bottom: max(
+    var(--host-safe-bottom, 0px),
+    env(safe-area-inset-bottom, 0px)
+  );
   --brand: #3182f6;
   --brand-dark: #1b64da;
   --brand-pale: #edf4ff;
@@ -38,7 +43,7 @@
   margin: 0 auto;
 }
 main {
-  padding: max(24px, env(safe-area-inset-top)) 24px 138px;
+  padding: max(24px, var(--safe-top)) 24px 138px;
 }
 main > section + section {
   margin-top: 28px;
@@ -284,7 +289,7 @@ p {
   width: min(100%, 480px);
   background: var(--surface);
   border-top: 1px solid var(--line);
-  padding: 10px 16px max(34px, env(safe-area-inset-bottom));
+  padding: 10px 16px max(34px, var(--safe-bottom));
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   z-index: 10;
@@ -674,7 +679,7 @@ textarea {
   background: rgba(0, 0, 0, 0.4);
 }
 .sheet-content {
-  padding: 10px 24px max(34px, env(safe-area-inset-bottom));
+  padding: 10px 24px max(34px, var(--safe-bottom));
 }
 .sheet-handle {
   width: 36px;

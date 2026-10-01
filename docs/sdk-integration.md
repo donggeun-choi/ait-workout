@@ -7,10 +7,10 @@
 | 영역 | 공식 API·설정 | 현재 상태 | 다음 작업과 검증 |
 | --- | --- | --- | --- |
 | 상단 뒤로가기 | `navigationBar.withBackButton`, `graniteEvent.addEventListener('backEvent')` | 연결됨. 시트 종료·내부 이력 복귀, 최초 화면은 기본 종료 | 토스 상단 버튼·Android 뒤로가기·첫 화면 종료를 기기 검증 |
-| 하단 안전 영역 | `SafeArea.get()`, `SafeArea.subscribe()` | CSS `env()`와 최소 34px 사용. SDK 연결 전 | 실제 WebView inset을 확인하고 CSS 변수에 연결, 변화 구독 해제. 키보드와 CTA 겹침 우선 확인 |
-| 기록 보존 | `Storage.getItem/setItem` | 웹 `localStorage` 사용. 네이티브 전환 전 | 전환 시 비동기 초기 로딩·기존 기록 이관·저장 순서·실패 복구 설계가 필요. 즉시 교체해 기존 기록을 잃지 않도록 별도 변경으로 진행 |
-| 운동 중 화면 유지 | `setScreenAwakeMode({ enabled })` | 미연결, 선택적 기능 | 필요할 때 운동 진행 화면에만 적용하고 화면 이탈·운동 종료 시 해제. 배터리와 사용자 의도 고려 |
-| 세트 완료 피드백 | `generateHapticFeedback()` | 미연결, 선택적 기능 | 체크 시 가벼운 피드백만 검토. 입력마다 진동하거나 실패를 기록 흐름에 전파하지 않음 |
+| 하단 안전 영역 | `SafeArea.get()`, `SafeArea.subscribe()` | 연결됨. SDK inset·CSS `env()` 중 큰 값과 최소 34px 사용 | 변경 구독과 해제 구현. 실제 기기 키보드·CTA 겹침 확인 필요 |
+| 기록 보존 | `Storage.getItem/setItem` | 연결됨. 네이티브 Storage 우선, 브라우저는 localStorage | 초기 로딩 후 기록 검증·이관, 원본 보존, 직렬 저장과 실패 재시도 구현. 기기 이관 검증 필요 |
+| 운동 중 화면 유지 | `setScreenAwakeMode({ enabled })` | 연결됨 | 운동 진행 화면이 보일 때만 유지. 탭 이탈·백그라운드·운동 종료·언마운트 시 해제 |
+| 세트 완료 피드백 | `generateHapticFeedback()` | 연결됨 | 유효한 세트를 완료할 때 tickWeak. 해제·입력 오류에는 진동하지 않고 SDK 실패는 기록 흐름에 전파하지 않음 |
 | 배너 광고 | `TossAds.initialize/attachBanner` | 대시보드 하단 슬롯 구성 | 실제 광고 그룹 ID 발급 후 운영 설정, 콘솔 QR로 렌더·클릭 후 복귀·노필·화면 이탈 정리 검증 |
 | 로그인·공유·결제·권한 | `appLogin`, `share`, IAP 등 | 현재 제품 흐름에는 연결하지 않음 | 계정·동기화·유료 기능 등 제품 범위가 정해질 때 도입. 기록 시작의 필수 절차로 넣지 않음 |
 
@@ -45,3 +45,11 @@
 - [WebView 배너 광고](https://developers-apps-in-toss.toss.im/documentation/common/monetization/iaa/web-banner)
 - [광고 그룹 콘솔 설정](https://developers-apps-in-toss.toss.im/guide/monetization/in-app-ad)
 - [비게임 출시 체크리스트](https://developers-apps-in-toss.toss.im/checklist/app-nongame)
+
+## 저장과 지원 환경 처리
+
+호스트 플랫폼 정보가 있으면 네이티브 Storage를 사용한다. 네이티브 읽기 실패 시 오래된 웹 데이터로 조용히 전환하지 않고 저장을 멈춘다. 네이티브 기록이 없을 때만 현재 origin의 기존 웹 기록을 검증해 이관하며 원본은 삭제하지 않는다. 이관 실패 시 읽은 기록을 표시하되 저장을 중단하고 재시도를 안내한다. 저장 요청은 직렬화해 과거 요청이 최신 기록을 덮어쓰지 않게 하며 완료 저장 성공 전에는 완료 시트를 표시하지 않는다.
+
+화면 유지와 햅틱은 v3의 `Screen.setAwakeMode`, `Device.triggerHaptic`를 사용한다. 미지원·실패는 운동 기록을 막지 않는다. SafeArea는 `--host-safe-*` 변수에 반영하며 구독은 언마운트 시 정리한다.
+
+v3 API 근거: [SDK v3](https://developers-apps-in-toss.toss.im/documentation/sdk/v3), [햅틱](https://developers-apps-in-toss.toss.im/documentation/sdk/domains-api/device/device.triggerhaptic).

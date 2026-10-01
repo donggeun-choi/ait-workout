@@ -22,7 +22,7 @@ bash scripts/check.sh
 
 - `setup.sh`: Node 24 이상 확인 후 `npm ci`로 잠금 파일과 같은 의존성을 설치한다. 재실행 가능하다.
 - `dev.sh`: 같은 런타임으로 Vite 실행. 인자를 그대로 전달하므로 `--port 5174 --strictPort`로 검증용 서버를 실행할 수 있다. Ctrl+C로 종료한다.
-- `check.sh`: ESLint → TypeScript → 웹 번들 → Apps in Toss `.ait` 번들까지 검증한다. 실패하면 오류 코드로 종료한다.
+- `check.sh`: 저장소 단위 테스트 → ESLint → TypeScript → 웹 번들 → Apps in Toss `.ait` 번들까지 검증한다. 실패하면 오류 코드로 종료한다.
 - `runtime.sh`: 현재 Node가 24 미만일 때 이미 설치된 Homebrew Node를 확인한다. Node를 자동으로 설치하지 않는다.
 
 다른 환경에서는 `nvm use` 또는 `.nvmrc`의 Node 24를 설치해 실행한다. 개별 검증은 `npm run lint`, `npm run typecheck`, `npm run build:web`로 실행할 수 있다.

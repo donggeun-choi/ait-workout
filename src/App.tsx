@@ -11,6 +11,11 @@ import { useEffect, useRef, useState } from "react";
 import { graniteEvent } from "@apps-in-toss/web-framework";
 import "./App.css";
 import { BannerAd } from "./BannerAd";
+import {
+  completedSetFeedback,
+  recordStorage,
+  usePlatformScreen,
+} from "./platform";
 
 type SetRow = { id: string; weight: string; reps: string; done: boolean };
 type Exercise = { id: string; name: string; muscle: string; sets: SetRow[] };
@@ -31,7 +36,6 @@ type Draft = {
 };
 type Saved = { sessions: Session[]; draft: Draft | null };
 type Page = "home" | "workout" | "dashboard" | "routines";
-const KEY = "workout-log-v1";
 const uid = () => crypto.randomUUID();
 const catalog = [
   { name: "벤치 프레스", muscle: "가슴", weight: "40" },
@@ -129,9 +133,8 @@ function validExercises(value: unknown): value is Exercise[] {
     )
   );
 }
-function load(): { data: Saved; error: boolean } {
+function load(raw: string | null): { data: Saved; error: boolean } {
   try {
-    const raw = localStorage.getItem(KEY);
     if (!raw) return { data: { sessions: [], draft: null }, error: false };
     const data = JSON.parse(raw);
     if (
@@ -259,8 +262,7 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     </Asset.ContentIcon>
   );
 }
-function App() {
-  const [initial] = useState(load);
+function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
   const [data, setData] = useState<Saved>(initial.data);
   const [storageError, setStorageError] = useState(initial.error);
   const [page, setPage] = useState<Page>(() => {
@@ -292,18 +294,30 @@ function App() {
   const screenKey = `${page}:${page === "workout" && !!data.draft}`;
   const sessions = demo ? examples : data.sessions;
   const draft = data.draft;
+  const saving = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  usePlatformScreen(page === "workout" && !!draft);
+  useEffect(() => {
+    mainRef.current?.toggleAttribute("inert", isSaving);
+  }, [isSaving]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
   useEffect(() => {
     if (initial.error) return;
-    try {
-      localStorage.setItem(KEY, JSON.stringify(data));
-      setStorageError(false);
-    } catch {
-      setStorageError(true);
-    }
+    let active = true;
+    void recordStorage.write(JSON.stringify(data)).then(
+      () => {
+        if (active) setStorageError(false);
+      },
+      () => {
+        if (active) setStorageError(true);
+      },
+    );
+    return () => {
+      active = false;
+    };
   }, [data, initial.error]);
   useEffect(() => {
     if (picker || detail || finished) {
@@ -454,7 +468,7 @@ function App() {
       () => {},
     );
   }
-  function persist(next: Saved) {
+  async function persist(next: Saved) {
     if (initial.error) {
       setError(
         "저장된 기록을 읽지 못했어요. 페이지를 새로고침해 다시 시도해 주세요.",
@@ -462,7 +476,7 @@ function App() {
       return false;
     }
     try {
-      localStorage.setItem(KEY, JSON.stringify(next));
+      await recordStorage.write(JSON.stringify(next));
       setData(next);
       setStorageError(false);
       return true;
@@ -511,6 +525,7 @@ function App() {
       return;
     }
     setError("");
+    if (!row.done) completedSetFeedback();
     updateDraft((d) => ({
       ...d,
       restUntil: !row.done ? Date.now() + 90000 : d.restUntil,
@@ -526,7 +541,8 @@ function App() {
       ),
     }));
   }
-  function finish() {
+  async function finish() {
+    if (saving.current) return;
     if (!draft || !countSets(draft.exercises)) {
       setError("완료한 세트를 하나 이상 체크해 주세요.");
       return;
@@ -541,10 +557,14 @@ function App() {
         .filter((x) => x.sets.length),
       note: draft.note,
     };
-    if (persist({ sessions: [session, ...data.sessions], draft: null })) {
+    saving.current = true;
+    setIsSaving(true);
+    if (await persist({ sessions: [session, ...data.sessions], draft: null })) {
       setError("");
       setFinished(session);
     }
+    saving.current = false;
+    setIsSaving(false);
   }
   const today = new Date(now);
   const monday = new Date(today);
@@ -1260,6 +1280,7 @@ function App() {
       )}
       {(page === "workout" || page === "routines") && (
         <BottomCTA.Single
+          disabled={isSaving}
           fixed
           takeSpace={false}
           hasSafeAreaPadding={page === "routines"}
@@ -1271,7 +1292,7 @@ function App() {
             bottom:
               page === "routines"
                 ? 0
-                : "calc(80px + max(34px, env(safe-area-inset-bottom)))",
+                : "calc(80px + max(34px, var(--safe-bottom)))",
             paddingTop: 16,
             zIndex: 9,
           }}
@@ -1292,7 +1313,9 @@ function App() {
               ? "자유 운동으로 선택"
               : `${routines[pendingRoutine].name} 선택`
             : draft
-              ? "운동 마치고 저장"
+              ? isSaving
+                ? "기록 저장 중"
+                : "운동 마치고 저장"
               : selectedRoutine === null
                 ? "자유 운동 시작"
                 : `${routines[selectedRoutine].name} 시작`}
@@ -1450,6 +1473,40 @@ function App() {
             })()}
         </div>
       </dialog>
+    </div>
+  );
+}
+let boot: Promise<ReturnType<typeof load>> | undefined;
+function App() {
+  const [initial, setInitial] = useState<ReturnType<typeof load> | null>(null);
+  useEffect(() => {
+    let active = true;
+    boot ??= recordStorage
+      .read()
+      .then(async ({ raw, migrate }) => {
+        const result = load(raw);
+        if (migrate && raw !== null && !result.error) {
+          try {
+            await recordStorage.write(raw);
+          } catch {
+            return { ...result, error: true };
+          }
+        }
+        return result;
+      })
+      .catch(() => ({ data: { sessions: [], draft: null }, error: true }));
+    void boot.then((result) => {
+      if (active) setInitial(result);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  return initial ? (
+    <WorkoutApp initial={initial} />
+  ) : (
+    <div className="app-shell">
+      <main role="status">운동 기록을 불러오고 있어요.</main>
     </div>
   );
 }

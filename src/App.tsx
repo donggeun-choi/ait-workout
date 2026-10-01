@@ -8,6 +8,7 @@ import {
   Top,
 } from "@toss/tds-mobile";
 import { useEffect, useRef, useState } from "react";
+import { graniteEvent } from "@apps-in-toss/web-framework";
 import "./App.css";
 
 type SetRow = { id: string; weight: string; reps: string; done: boolean };
@@ -283,6 +284,10 @@ function App() {
   const mainRef = useRef<HTMLElement>(null);
   const sheetAnimation = useRef<Animation | null>(null);
   const sheetClosing = useRef(false);
+  const sheetBackPending = useRef(false);
+  const afterSheetPage = useRef<Page | null>(null);
+  const backHandler = useRef<() => void>(() => {});
+  const [canGoBack, setCanGoBack] = useState(false);
   const screenKey = `${page}:${page === "workout" && !!data.draft}`;
   const sessions = demo ? examples : data.sessions;
   const draft = data.draft;
@@ -300,8 +305,12 @@ function App() {
     }
   }, [data, initial.error]);
   useEffect(() => {
-    if (picker || detail || finished) dialogRef.current?.showModal();
-    else dialogRef.current?.close();
+    if (picker || detail || finished) {
+      if (!history.state?.sheet) {
+        history.pushState({ ...history.state, sheet: true }, "");
+      }
+      dialogRef.current?.showModal();
+    } else dialogRef.current?.close();
   }, [picker, detail, finished]);
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -321,22 +330,90 @@ function App() {
     [],
   );
   useEffect(() => {
+    if (!history.state?.workoutNavigation) {
+      history.replaceState({ workoutNavigation: true, page, depth: 0 }, "");
+    }
+    setCanGoBack(history.state.depth > 0);
     const onBack = () => {
-      setPage((history.state?.page as Page) || "home");
-      closeDialog();
+      backHandler.current();
     };
     window.addEventListener("popstate", onBack);
     return () => window.removeEventListener("popstate", onBack);
-  }, []);
+  }, [page]);
+  backHandler.current = () => {
+    if (dialogRef.current?.open) {
+      sheetBackPending.current = false;
+      closeDialog();
+      return;
+    }
+    const next = location.hash.slice(1);
+    const destination: Page =
+      next === "workout" || next === "dashboard" || next === "routines"
+        ? next
+        : "home";
+    setPage(destination);
+    if (history.state?.sheet) {
+      history.replaceState({ ...history.state, sheet: false }, "");
+    }
+    if (destination === "routines") setPendingRoutine(selectedRoutine);
+    setCanGoBack((history.state?.depth ?? 0) > 0);
+    setError("");
+    window.scrollTo(0, 0);
+  };
+  const platformBack = useRef<() => void>(() => {});
+  platformBack.current = () => {
+    if (dialogRef.current?.open) closeDialog();
+    else if (page === "routines" && !canGoBack) leaveRoutines();
+    else history.back();
+  };
+  const hasSheet = !!(picker || detail || finished);
+  useEffect(() => {
+    if (!hasSheet && !canGoBack && page !== "routines") return;
+    return graniteEvent.addEventListener("backEvent", {
+      onEvent: () => platformBack.current(),
+      onError: () => setError("뒤로 이동하지 못했어요. 다시 시도해 주세요."),
+    });
+  }, [hasSheet, canGoBack, page]);
+  function leaveRoutines() {
+    setPendingRoutine(selectedRoutine);
+    if (history.state?.depth > 0) history.back();
+    else {
+      history.replaceState(
+        { workoutNavigation: true, page: "workout", depth: 0 },
+        "",
+        "#workout",
+      );
+      setPage("workout");
+      setError("");
+      window.scrollTo(0, 0);
+    }
+  }
   function navigate(next: Page) {
     setError("");
     if (next === "routines") setPendingRoutine(selectedRoutine);
-    if (next !== page) history.pushState({ page: next }, "", `#${next}`);
+    if (next !== page) {
+      history.pushState(
+        {
+          workoutNavigation: true,
+          page: next,
+          depth: (history.state?.depth ?? 0) + 1,
+        },
+        "",
+        `#${next}`,
+      );
+      setCanGoBack(true);
+    }
     setPage(next);
     window.scrollTo(0, 0);
   }
   function closeDialog() {
     if (sheetClosing.current) return;
+    if (history.state?.sheet) {
+      if (sheetBackPending.current) return;
+      sheetBackPending.current = true;
+      history.back();
+      return;
+    }
     const sheet = dialogRef.current;
     const clear = () => {
       sheet?.close();
@@ -347,6 +424,9 @@ function App() {
       setDetail(null);
       setFinished(null);
       setQuery("");
+      const next = afterSheetPage.current;
+      afterSheetPage.current = null;
+      if (next) navigate(next);
     };
     if (
       !sheet?.open ||
@@ -839,7 +919,7 @@ function App() {
               display="block"
               color="dark"
               variant="weak"
-              onClick={() => navigate("workout")}
+              onClick={leaveRoutines}
             >
               선택하지 않고 돌아가기
             </Button>
@@ -1196,7 +1276,7 @@ function App() {
           onClick={() => {
             if (page === "routines") {
               setSelectedRoutine(pendingRoutine);
-              navigate("workout");
+              leaveRoutines();
             } else if (draft) finish();
             else {
               const routine =
@@ -1357,8 +1437,8 @@ function App() {
                   <Button
                     display="block"
                     onClick={() => {
+                      if (finished) afterSheetPage.current = "home";
                       closeDialog();
-                      if (finished) navigate("home");
                     }}
                   >
                     {finished ? "홈으로 돌아가기" : "확인"}

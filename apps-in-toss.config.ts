@@ -6,5 +6,9 @@ export default defineConfig({
     primaryColor: "#3182F6", // 사용자 요청: TDS blue primary
   },
   permissions: [],
+  navigationBar: {
+    withBackButton: true,
+    withHomeButton: false,
+  },
   webBundleDir: "dist",
 });

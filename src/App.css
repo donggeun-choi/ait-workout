@@ -1118,3 +1118,70 @@ textarea {
   gap: 8px;
   padding-top: 8px;
 }
+
+.activity-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.activity-toggle > button {
+  flex: 1;
+  min-height: 44px;
+}
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.month-weekdays {
+  margin-bottom: 8px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--subtle);
+}
+.grass-cell {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.grass-level-0 {
+  background: var(--canvas);
+  color: var(--subtle);
+}
+.grass-level-1 {
+  background: #dbeafe;
+  color: #194a8d;
+}
+.grass-level-2 {
+  background: #a6c9fc;
+  color: #173f77;
+}
+.grass-level-3 {
+  background: #4d8eea;
+  color: #102d53;
+}
+.grass-level-4 {
+  background: #1b64da;
+  color: #fff;
+}
+.grass-today {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+.grass-legend {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--subtle);
+}
+.grass-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}

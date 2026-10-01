@@ -316,6 +316,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
   const [finished, setFinished] = useState<Session | null>(null);
   const [error, setError] = useState("");
   const [period, setPeriod] = useState(28);
+  const [homePeriod, setHomePeriod] = useState<"week" | "month">("week");
   const dialogRef = useRef<HTMLDialogElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const sheetAnimation = useRef<Animation | null>(null);
@@ -619,6 +620,37 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
   });
   const weekSessions = sessions.filter((s) => dayKey(s.date) >= dayKey(monday));
   const activeDays = new Set(weekSessions.map((s) => dayKey(s.date))).size;
+  const monthKey = dayKey(today).slice(0, 7);
+  const [calendarYear, calendarMonth] = monthKey.split("-").map(Number);
+  const monthSessions = sessions.filter((session) =>
+    dayKey(session.date).startsWith(monthKey),
+  );
+  const monthDays = new Set(
+    monthSessions.map((session) => dayKey(session.date)),
+  ).size;
+  const monthStart = new Date(Date.UTC(calendarYear, calendarMonth - 1, 1));
+  const monthOffset = (monthStart.getUTCDay() + 6) % 7;
+  const monthLength = new Date(
+    Date.UTC(calendarYear, calendarMonth, 0),
+  ).getUTCDate();
+  const monthCells = Array.from(
+    { length: Math.ceil((monthOffset + monthLength) / 7) * 7 },
+    (_, index) => {
+      const date = index - monthOffset + 1;
+      if (date < 1 || date > monthLength) return null;
+      const key = `${monthKey}-${String(date).padStart(2, "0")}`;
+      const sets = monthSessions
+        .filter((session) => dayKey(session.date) === key)
+        .reduce((sum, session) => sum + countSets(session.exercises), 0);
+      return {
+        date,
+        key,
+        sets,
+        level:
+          sets === 0 ? 0 : sets <= 5 ? 1 : sets <= 10 ? 2 : sets <= 15 ? 3 : 4,
+      };
+    },
+  );
   const weekVolumes = Array.from({ length: 4 }, (_, i) => {
     const start = new Date(monday);
     start.setDate(start.getDate() - (3 - i) * 7);
@@ -760,38 +792,105 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
               <p>쌓이는 기록이 나의 변화를 만들어요.</p>
             </section>
             <section className="week-card">
+              <div
+                className="activity-toggle"
+                role="group"
+                aria-label="운동 활동 조회 단위"
+              >
+                {(["week", "month"] as const).map((value) => (
+                  <Button
+                    key={value}
+                    size="medium"
+                    variant="weak"
+                    color={homePeriod === value ? "primary" : "dark"}
+                    aria-pressed={homePeriod === value}
+                    onClick={() => setHomePeriod(value)}
+                  >
+                    {value === "week" ? "주간" : "월간"}
+                  </Button>
+                ))}
+              </div>
               <div className="section-heading">
-                <h2>이번 주 운동</h2>
+                <h2>
+                  {homePeriod === "week"
+                    ? "이번 주 운동"
+                    : `${calendarMonth}월 운동`}
+                </h2>
                 <Badge size="medium" color="blue" variant="weak">
-                  {activeDays}일 완료
+                  {homePeriod === "week" ? activeDays : monthDays}일 완료
                 </Badge>
               </div>
-              <div className="week-strip">
-                {days.map((d, i) => {
-                  const done = sessions.some(
-                    (s) => dayKey(s.date) === dayKey(d),
-                  );
-                  return (
-                    <div
-                      key={i}
-                      className={`day ${dayKey(d) === dayKey(today) ? "today" : ""}`}
-                    >
-                      <span>
-                        {["월", "화", "수", "목", "금", "토", "일"][i]}
-                      </span>
-                      <div className={done ? "day-bubble done" : "day-bubble"}>
-                        {done ? <Icon name="check" size={19} /> : d.getDate()}
+              {homePeriod === "week" ? (
+                <div className="week-strip">
+                  {days.map((d, i) => {
+                    const done = sessions.some(
+                      (s) => dayKey(s.date) === dayKey(d),
+                    );
+                    return (
+                      <div
+                        key={i}
+                        className={`day ${dayKey(d) === dayKey(today) ? "today" : ""}`}
+                      >
+                        <span>
+                          {["월", "화", "수", "목", "금", "토", "일"][i]}
+                        </span>
+                        <div
+                          className={done ? "day-bubble done" : "day-bubble"}
+                        >
+                          {done ? <Icon name="check" size={19} /> : d.getDate()}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div
+                  className="month-activity"
+                  aria-label={`${calendarYear}년 ${calendarMonth}월 일별 완료 세트`}
+                >
+                  <div className="month-grid month-weekdays" aria-hidden="true">
+                    {["월", "화", "수", "목", "금", "토", "일"].map((day) => (
+                      <span key={day}>{day}</span>
+                    ))}
+                  </div>
+                  <div className="month-grid">
+                    {monthCells.map((cell, index) =>
+                      cell ? (
+                        <div
+                          key={cell.key}
+                          className={`grass-cell grass-level-${cell.level}${cell.key === dayKey(today) ? " grass-today" : ""}`}
+                          title={`${cell.date}일 · ${cell.sets}세트`}
+                          aria-label={`${cell.date}일, 완료 ${cell.sets}세트`}
+                        >
+                          <span>{cell.date}</span>
+                        </div>
+                      ) : (
+                        <div key={`blank-${index}`} aria-hidden="true" />
+                      ),
+                    )}
+                  </div>
+                  <div className="grass-legend">
+                    <span>완료 세트 적음</span>
+                    {[0, 1, 2, 3, 4].map((level) => (
+                      <span
+                        key={level}
+                        className={`grass-swatch grass-level-${level}`}
+                        aria-hidden="true"
+                      />
+                    ))}
+                    <span>많음</span>
+                  </div>
+                </div>
+              )}
               <div className="week-footer">
                 <Icon name="time" size={17} />
                 <span>
-                  이번 주{" "}
+                  {homePeriod === "week" ? "이번 주" : "이번 달"}{" "}
                   {Math.ceil(
-                    weekSessions.reduce((n, s) => n + s.seconds, 0) / 60,
+                    (homePeriod === "week"
+                      ? weekSessions
+                      : monthSessions
+                    ).reduce((n, s) => n + s.seconds, 0) / 60,
                   )}
                   분을 기록했어요
                 </span>

@@ -49,4 +49,6 @@ Strong의 로고·이미지·카피를 사용하지 않았습니다. 앱 이름�
 
 ## 개발 하네스
 
+앱의 목적·사용자 흐름·화면별 책임·개발 기조는 [docs/product-direction.md](docs/product-direction.md)에, 에이전트 작업 지침은 [AGENTS.md](AGENTS.md)에 있습니다.
+
 새 체크아웃에서는 `bash scripts/setup.sh`, 개발은 `bash scripts/dev.sh --host 127.0.0.1`, 전체 검증은 `bash scripts/check.sh`를 사용합니다. Node 버전 선택·작업 절차·GitHub CI는 [docs/harness.md](docs/harness.md)에 정리되어 있습니다.

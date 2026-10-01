@@ -294,6 +294,15 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
   const screenKey = `${page}:${page === "workout" && !!data.draft}`;
   const sessions = demo ? examples : data.sessions;
   const draft = data.draft;
+  const recentExerciseNames = [...data.sessions]
+    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
+    .flatMap((session) => session.exercises.map((exercise) => exercise.name));
+  const quickExercises = [
+    ...new Set([...recentExerciseNames, "벤치 프레스", "랫 풀다운", "스쿼트"]),
+  ]
+    .map((name) => catalog.find((exercise) => exercise.name === name))
+    .filter((exercise): exercise is (typeof catalog)[number] => !!exercise)
+    .slice(0, 3);
   const saving = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
   usePlatformScreen(page === "workout" && !!draft);
@@ -981,11 +990,50 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
               </div>
             )}
             {draft.exercises.length === 0 && (
-              <div className="empty-state">
-                <Icon name="plus" size={24} />
-                <h3>첫 운동을 추가해 주세요</h3>
-                <p>종목을 선택하면 세트 기록을 시작할 수 있어요.</p>
-              </div>
+              <section
+                className="quick-exercises"
+                aria-labelledby="quick-exercises-title"
+              >
+                <h2 id="quick-exercises-title">첫 운동을 골라 주세요</h2>
+                <p>
+                  {recentExerciseNames.length
+                    ? "최근 했던 운동을 바로 추가해요."
+                    : "누르면 바로 세트를 기록할 수 있어요."}
+                </p>
+                <div className="quick-exercise-list">
+                  {quickExercises.map((exercise) => (
+                    <ListRow
+                      key={exercise.name}
+                      as="button"
+                      type="button"
+                      className="quick-exercise-row"
+                      aria-label={`${exercise.name} 추가`}
+                      withTouchEffect
+                      contents={
+                        <ListRow.Texts
+                          type="1RowTypeA"
+                          top={exercise.name}
+                          topProps={{ typography: "t5" }}
+                        />
+                      }
+                      right={
+                        <span className="quick-exercise-action">
+                          <span>{exercise.muscle}</span>
+                          <Icon name="plus" size={16} />
+                        </span>
+                      }
+                      onClick={() => {
+                        const added = makeExercise(exercise.name);
+                        updateDraft((current) =>
+                          current.exercises.length
+                            ? current
+                            : { ...current, exercises: [added] },
+                        );
+                      }}
+                    />
+                  ))}
+                </div>
+              </section>
             )}
             {draft.exercises.map((ex) => (
               <section className="exercise-card" key={ex.id}>
@@ -1112,29 +1160,35 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                 </button>
               </section>
             ))}
-            <Button
-              display="block"
-              variant="weak"
-              onClick={() => {
-                setPicker(true);
-                setMuscle("전체");
-              }}
-            >
-              운동 추가
-            </Button>
-            <div className="workout-note">
-              <TextArea
-                variant="box"
-                labelOption="sustain"
-                label="운동 메모"
-                placeholder="오늘의 컨디션이나 다음 운동 목표를 남겨요"
-                value={draft.note}
-                onChange={(e) =>
-                  updateDraft((d) => ({ ...d, note: e.target.value }))
-                }
-              />
-            </div>
-            <p className="footnote">체크한 세트만 기록에 저장돼요.</p>
+            {draft.exercises.length > 0 && (
+              <Button
+                display="block"
+                variant="weak"
+                onClick={() => {
+                  setPicker(true);
+                  setMuscle("전체");
+                }}
+              >
+                운동 추가
+              </Button>
+            )}
+            {(draft.exercises.length > 0 || draft.note) && (
+              <div className="workout-note">
+                <TextArea
+                  variant="box"
+                  labelOption="sustain"
+                  label="운동 메모"
+                  placeholder="오늘의 컨디션이나 다음 운동 목표를 남겨요"
+                  value={draft.note}
+                  onChange={(e) =>
+                    updateDraft((d) => ({ ...d, note: e.target.value }))
+                  }
+                />
+              </div>
+            )}
+            {draft.exercises.length > 0 && (
+              <p className="footnote">체크한 세트만 기록에 저장돼요.</p>
+            )}
           </>
         )}
         {page === "dashboard" && (
@@ -1300,6 +1354,9 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
             if (page === "routines") {
               setSelectedRoutine(pendingRoutine);
               leaveRoutines();
+            } else if (draft && !draft.exercises.length) {
+              setPicker(true);
+              setMuscle("전체");
             } else if (draft) finish();
             else {
               const routine =
@@ -1313,9 +1370,11 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
               ? "자유 운동으로 선택"
               : `${routines[pendingRoutine].name} 선택`
             : draft
-              ? isSaving
-                ? "기록 저장 중"
-                : "운동 마치고 저장"
+              ? !draft.exercises.length
+                ? "다른 운동 찾기"
+                : isSaving
+                  ? "기록 저장 중"
+                  : "운동 마치고 저장"
               : selectedRoutine === null
                 ? "자유 운동 시작"
                 : `${routines[selectedRoutine].name} 시작`}

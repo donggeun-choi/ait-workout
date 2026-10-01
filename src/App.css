@@ -983,6 +983,38 @@ textarea {
   font-size: 22px;
   letter-spacing: -0.6px;
 }
+.quick-exercises {
+  margin-bottom: 20px;
+}
+.quick-exercises h2 {
+  font-size: 17px;
+}
+.quick-exercises > p {
+  margin: 6px 0 16px;
+}
+.quick-exercise-list {
+  margin: 0 -24px;
+}
+.quick-exercise-row {
+  width: 100%;
+  min-height: 64px;
+  border: 0;
+  background: var(--surface);
+  text-align: left;
+}
+.quick-exercise-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--subtle);
+  font-size: 15px;
+}
+@media (max-width: 360px) {
+  .quick-exercise-list {
+    margin-left: -18px;
+    margin-right: -18px;
+  }
+}
 
 /* Motion supports orientation without delaying workout input. */
 .sheet[data-closing] .sheet-content {

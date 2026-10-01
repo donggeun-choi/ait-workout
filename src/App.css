@@ -963,3 +963,63 @@ textarea {
   font-size: 22px;
   letter-spacing: -0.6px;
 }
+
+/* Motion supports orientation without delaying workout input. */
+.sheet[data-closing] .sheet-content {
+  pointer-events: none;
+}
+.sheet[open]:not([data-closing]) {
+  animation: sheet-enter 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+.sheet[open]::backdrop {
+  animation: backdrop-enter 180ms ease-out;
+}
+.sheet[data-closing]::backdrop {
+  animation: backdrop-exit 150ms ease-in forwards;
+}
+.bottom-nav button,
+.routine-option,
+.check-button,
+.set-grid input {
+  transition:
+    background-color 120ms ease-out,
+    color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+@keyframes sheet-enter {
+  from {
+    transform: translateY(48px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes backdrop-enter {
+  from {
+    background: rgba(0, 0, 0, 0);
+  }
+  to {
+    background: rgba(0, 0, 0, 0.4);
+  }
+}
+@keyframes backdrop-exit {
+  from {
+    background: rgba(0, 0, 0, 0.4);
+  }
+  to {
+    background: rgba(0, 0, 0, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet[open],
+  .sheet[open]::backdrop,
+  .bottom-nav button,
+  .routine-option,
+  .check-button,
+  .set-grid input {
+    animation: none;
+    transition: none;
+  }
+}

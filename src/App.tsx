@@ -280,6 +280,10 @@ function App() {
   const [error, setError] = useState("");
   const [period, setPeriod] = useState(28);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const sheetAnimation = useRef<Animation | null>(null);
+  const sheetClosing = useRef(false);
+  const screenKey = `${page}:${page === "workout" && !!data.draft}`;
   const sessions = demo ? examples : data.sessions;
   const draft = data.draft;
   useEffect(() => {
@@ -300,6 +304,23 @@ function App() {
     else dialogRef.current?.close();
   }, [picker, detail, finished]);
   useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const animation = mainRef.current?.animate(
+      [
+        { opacity: 0.6, transform: "translateY(8px)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ],
+      { duration: 160, easing: "cubic-bezier(0.2, 0, 0, 1)" },
+    );
+    return () => animation?.cancel();
+  }, [screenKey]);
+  useEffect(
+    () => () => {
+      sheetAnimation.current?.cancel();
+    },
+    [],
+  );
+  useEffect(() => {
     const onBack = () => {
       setPage((history.state?.page as Page) || "home");
       closeDialog();
@@ -315,10 +336,42 @@ function App() {
     window.scrollTo(0, 0);
   }
   function closeDialog() {
-    setPicker(false);
-    setDetail(null);
-    setFinished(null);
-    setQuery("");
+    if (sheetClosing.current) return;
+    const sheet = dialogRef.current;
+    const clear = () => {
+      sheet?.close();
+      if (sheet) delete sheet.dataset.closing;
+      sheetClosing.current = false;
+      sheetAnimation.current = null;
+      setPicker(false);
+      setDetail(null);
+      setFinished(null);
+      setQuery("");
+    };
+    if (
+      !sheet?.open ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      clear();
+      return;
+    }
+    sheetClosing.current = true;
+    sheet.dataset.closing = "true";
+    const animation = sheet.animate(
+      [
+        { transform: "translateY(0)", opacity: 1 },
+        { transform: "translateY(48px)", opacity: 0 },
+      ],
+      { duration: 150, easing: "cubic-bezier(0.4, 0, 1, 1)", fill: "forwards" },
+    );
+    sheetAnimation.current = animation;
+    void animation.finished.then(
+      () => {
+        clear();
+        animation.cancel();
+      },
+      () => {},
+    );
   }
   function persist(next: Saved) {
     if (initial.error) {
@@ -487,7 +540,7 @@ function App() {
   );
   return (
     <div className="app-shell">
-      <main>
+      <main ref={mainRef}>
         <div className="intro">
           <span className="eyebrow">
             <span className="brand-mark">
@@ -1166,7 +1219,10 @@ function App() {
       <dialog
         ref={dialogRef}
         className="sheet"
-        onCancel={closeDialog}
+        onCancel={(event) => {
+          event.preventDefault();
+          closeDialog();
+        }}
         onClick={(e) => {
           if (e.target === e.currentTarget) closeDialog();
         }}
@@ -1227,6 +1283,7 @@ function App() {
                       key={x.name}
                       className="picker-row"
                       onClick={() => {
+                        if (sheetClosing.current) return;
                         updateDraft((d) => ({
                           ...d,
                           exercises: [...d.exercises, makeExercise(x.name)],

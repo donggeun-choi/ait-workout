@@ -14,7 +14,8 @@
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
   word-break: keep-all;
   overflow-wrap: break-word;
 }

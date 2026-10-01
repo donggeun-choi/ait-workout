@@ -1,4 +1,5 @@
 :root {
+  --nav-height: calc(66px + max(34px, var(--safe-bottom)));
   --safe-top: max(var(--host-safe-top, 0px), env(safe-area-inset-top, 0px));
   --safe-bottom: max(
     var(--host-safe-bottom, 0px),
@@ -15,8 +16,8 @@
   --radius: 22px;
   --caption: 13px;
   --body: 15px;
-  --title: 20px;
-  --display: 28px;
+  --title: 17px;
+  --display: 22px;
   --space-sm: 8px;
   --space-md: 16px;
   --space-lg: 24px;
@@ -37,13 +38,23 @@
   }
 }
 .app-shell {
+  --dock-height: var(--nav-height);
   max-width: 480px;
-  min-height: 100dvh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--surface);
   margin: 0 auto;
 }
 main {
-  padding: max(24px, var(--safe-top)) 24px 138px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-padding: 24px;
+  margin-bottom: var(--dock-height);
+  padding: max(20px, var(--safe-top)) 24px 24px;
 }
 main > section + section {
   margin-top: 28px;
@@ -486,7 +497,7 @@ p {
   border-radius: 9px;
   background: var(--canvas);
   text-align: center;
-  font-size: 17px;
+  font-size: 16px;
   color: var(--text);
 }
 .set-grid input::-webkit-inner-spin-button {
@@ -669,7 +680,9 @@ textarea {
   border: 0;
   width: min(100%, 480px);
   max-width: 480px;
-  max-height: 87dvh;
+  max-height: calc(100dvh - max(24px, var(--safe-top)));
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: 0;
   border-radius: 26px 26px 0 0;
   color: var(--text);
@@ -866,12 +879,11 @@ textarea {
 .workout-note {
   margin: 24px 0;
 }
-.app-shell:has(.workout-landing) main,
-.app-shell:has(.exercise-card) main {
-  padding-bottom: 220px;
+.app-shell[data-page="workout"] {
+  --dock-height: calc(var(--nav-height) + 84px);
 }
-.app-shell:has(.routine-library) main {
-  padding-bottom: 150px;
+.app-shell[data-page="routines"] {
+  --dock-height: calc(68px + max(34px, var(--safe-bottom)));
 }
 @media (max-width: 360px) {
   .workout-landing,
@@ -895,7 +907,7 @@ textarea {
 .prepared-workout > h2 {
   padding: 0 20px;
   margin: 8px 0 6px;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
 }
 .prepared-description {
@@ -980,7 +992,7 @@ textarea {
   white-space: nowrap;
 }
 .session-heading h1 {
-  font-size: 22px;
+  font-size: 20px;
   letter-spacing: -0.6px;
 }
 .quick-exercises {
@@ -1074,4 +1086,9 @@ textarea {
     animation: none;
     transition: none;
   }
+}
+
+.workout-note textarea {
+  font-size: 16px !important;
+  line-height: 1.5;
 }

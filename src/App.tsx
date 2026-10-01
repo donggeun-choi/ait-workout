@@ -382,7 +382,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
     if (destination === "routines") setPendingRoutine(selectedRoutine);
     setCanGoBack((history.state?.depth ?? 0) > 0);
     setError("");
-    window.scrollTo(0, 0);
+    mainRef.current?.scrollTo(0, 0);
   };
   const platformBack = useRef<() => void>(() => {});
   platformBack.current = () => {
@@ -409,7 +409,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
       );
       setPage("workout");
       setError("");
-      window.scrollTo(0, 0);
+      mainRef.current?.scrollTo(0, 0);
     }
   }
   function navigate(next: Page) {
@@ -428,7 +428,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
       setCanGoBack(true);
     }
     setPage(next);
-    window.scrollTo(0, 0);
+    mainRef.current?.scrollTo(0, 0);
   }
   function closeDialog() {
     if (sheetClosing.current) return;
@@ -649,7 +649,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
     </div>
   );
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-page={page}>
       <main ref={mainRef}>
         <div className="intro">
           <span className="eyebrow">
@@ -836,7 +836,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                         ? "추천 루틴에서 선택"
                         : "루틴 변경"
                     }
-                    topProps={{ typography: "t5" }}
+                    topProps={{ typography: "t6" }}
                   />
                 }
                 onClick={() => navigate("routines")}
@@ -907,7 +907,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                             ? `${routine.subtitle} · ${routine.names.length}개 운동`
                             : "종목을 직접 추가하며 기록해요"
                         }
-                        topProps={{ typography: "t5" }}
+                        topProps={{ typography: "t6" }}
                         bottomProps={{ typography: "t6" }}
                       />
                     }
@@ -1013,7 +1013,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                         <ListRow.Texts
                           type="1RowTypeA"
                           top={exercise.name}
-                          topProps={{ typography: "t5" }}
+                          topProps={{ typography: "t6" }}
                         />
                       }
                       right={
@@ -1343,11 +1343,10 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
             width: "min(100%, 480px)",
             left: "50%",
             transform: "translateX(-50%)",
-            bottom:
-              page === "routines"
-                ? 0
-                : "calc(80px + max(34px, var(--safe-bottom)))",
-            paddingTop: 16,
+            bottom: page === "routines" ? 0 : "var(--nav-height)",
+            paddingTop: 12,
+            paddingBottom:
+              page === "routines" ? "max(34px, var(--safe-bottom))" : 16,
             zIndex: 9,
           }}
           onClick={() => {

@@ -421,3 +421,33 @@ export function previousSetLabel(
     ? `지난 ${row.reps}회`
     : `지난 ${row.weight}kg × ${row.reps}회`;
 }
+
+export function effectiveRestSeconds(data: Saved, exercise: Exercise): number {
+  if (data.settings?.restSeconds === 0) return 0;
+  return exercise.restSeconds ?? data.settings?.restSeconds ?? 90;
+}
+export function changeDefaultRest(data: Saved, restSeconds: number): Saved {
+  return {
+    ...data,
+    settings: { restSeconds },
+    draft: data.draft
+      ? {
+          ...data.draft,
+          restUntil: restSeconds === 0 ? null : data.draft.restUntil,
+        }
+      : null,
+  };
+}
+export function remainingRestSeconds(
+  until: number | null,
+  now: number,
+): number {
+  return until === null ? 0 : Math.max(0, Math.ceil((until - now) / 1000));
+}
+export function extendRest(
+  until: number | null,
+  milliseconds: number,
+  now: number,
+): number | null {
+  return until === null ? null : Math.max(now, until) + milliseconds;
+}

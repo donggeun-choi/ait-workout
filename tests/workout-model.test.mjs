@@ -18,6 +18,10 @@ const {
   previousCompletedSet,
   previousSetLabel,
   firstIncompleteSet,
+  effectiveRestSeconds,
+  changeDefaultRest,
+  remainingRestSeconds,
+  extendRest,
 } = await import(
   `data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`
 );
@@ -179,4 +183,45 @@ test("previous set label retains weighted bodyweight exercise load", () => {
     "지난 37.5kg × 8회",
   );
   assert.equal(previousSetLabel(null, true), "지난 기록 없음");
+});
+
+test("shared rest default preserves routine overrides and globally disables rest", () => {
+  const data = {
+    sessions: [],
+    settings: { restSeconds: 90 },
+    draft: {
+      name: "Workout",
+      started: 0,
+      note: "",
+      restUntil: 150000,
+      exercises: [{ ...session().exercises[0], restSeconds: 120 }],
+    },
+  };
+  const before = JSON.stringify(data);
+  const changed = changeDefaultRest(data, 60);
+  assert.equal(changed.settings.restSeconds, 60);
+  assert.equal(changed.draft.exercises[0].restSeconds, 120);
+  assert.equal(changed.draft.restUntil, 150000);
+  assert.equal(effectiveRestSeconds(changed, changed.draft.exercises[0]), 120);
+  assert.equal(
+    effectiveRestSeconds(changed, {
+      ...changed.draft.exercises[0],
+      restSeconds: undefined,
+    }),
+    60,
+  );
+  const off = changeDefaultRest(changed, 0);
+  assert.equal(off.draft.restUntil, null);
+  assert.equal(effectiveRestSeconds(off, off.draft.exercises[0]), 0);
+  assert.equal(JSON.stringify(data), before);
+  assert.equal(changeDefaultRest({ ...data, draft: null }, 60).draft, null);
+});
+
+test("shared countdown uses wall time and extension never restarts absent rest", () => {
+  assert.equal(remainingRestSeconds(100000, 80500), 20);
+  assert.equal(remainingRestSeconds(100000, 101000), 0);
+  assert.equal(remainingRestSeconds(null, 80000), 0);
+  assert.equal(extendRest(100000, 30000, 80000), 130000);
+  assert.equal(extendRest(100000, 30000, 110000), 140000);
+  assert.equal(extendRest(null, 30000, 110000), null);
 });

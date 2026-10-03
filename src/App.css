@@ -1989,3 +1989,141 @@ main > .rest-panel {
     font-size: 22px;
   }
 }
+
+/* Persistent access stays outside the scrolling page and reserves its space. */
+.app-shell[data-active-workout] {
+  --dock-height: calc(var(--nav-height) + 68px);
+}
+.app-shell[data-active-workout]:is(
+    [data-page="dashboard"],
+    [data-page="records"],
+    [data-page="manage"]
+  ) {
+  --dock-height: calc(68px + max(34px, var(--safe-bottom)));
+}
+.app-shell[data-active-workout][data-page="routines"] {
+  --dock-height: calc(136px + max(34px, var(--safe-bottom)));
+}
+.active-workout-bar {
+  position: fixed;
+  bottom: var(--nav-height);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(100%, 480px);
+  padding: 6px 18px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  z-index: 20;
+}
+.app-shell:is(
+    [data-page="dashboard"],
+    [data-page="records"],
+    [data-page="manage"]
+  )
+  > .active-workout-bar {
+  bottom: max(34px, var(--safe-bottom));
+}
+.app-shell[data-page="routines"] > .active-workout-bar {
+  bottom: calc(68px + max(34px, var(--safe-bottom)));
+}
+.active-workout-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 54px;
+  background: var(--brand-pale);
+  border: 1px solid #d5e5ff;
+  border-radius: 12px;
+  padding: 4px 6px;
+}
+.active-workout-return {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  padding: 0 6px;
+  text-align: left;
+  color: var(--text);
+}
+.active-workout-return strong {
+  font-size: 15px;
+  font-weight: 600;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.active-workout-return span {
+  font-size: 13px;
+  color: var(--subtle);
+  font-variant-numeric: tabular-nums;
+}
+.active-rest-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  min-height: 44px;
+  min-width: 44px;
+  flex-shrink: 0;
+  border: 1px solid #d5e5ff;
+  border-radius: 10px;
+  color: var(--brand-dark);
+  background: var(--surface);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.active-rest-panel {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 18px;
+  right: 18px;
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(25, 31, 40, 0.12);
+}
+.active-rest-panel .rest-options {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+.active-workout-bar.is-inline {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  transform: none;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 12px;
+  border: 0;
+}
+.active-workout-bar.is-inline .active-rest-panel {
+  bottom: auto;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+}
+.active-workout-bar.is-inline .active-rest-panel .rest-options {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+.community-modal-content {
+  width: min(100%, 480px);
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-self: flex-end;
+}
+.community-modal-content > .active-workout-bar {
+  padding: 8px 16px;
+  margin: 0;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.community-modal-content:has(.active-workout-bar) .community-sheet {
+  max-height: calc(92dvh - 80px);
+}

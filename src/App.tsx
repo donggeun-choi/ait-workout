@@ -1,3 +1,4 @@
+import { ActiveWorkoutContext } from "./active-workout-context";
 import {
   Asset,
   Badge,
@@ -9,6 +10,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { graniteEvent } from "@apps-in-toss/web-framework";
 import "./App.css";
+import { ActiveWorkoutBar, RestControls } from "./ActiveWorkout";
 import { BannerAd } from "./BannerAd";
 import { Community, ShareWorkout } from "./Community";
 import { createSaveTracker, type SaveStatus } from "./save-state";
@@ -26,6 +28,9 @@ import {
   previousCompletedSet,
   previousSetLabel,
   firstIncompleteSet,
+  effectiveRestSeconds,
+  changeDefaultRest,
+  extendRest,
   validMetadata,
   validSession,
   prepareRepeat,
@@ -325,85 +330,6 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     </Asset.ContentIcon>
   );
 }
-function RestDurationPicker({
-  value,
-  onChange,
-}: {
-  value: number;
-  onChange: (seconds: number) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !root.current?.contains(event.target))
-        setOpen(false);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setOpen(false);
-        trigger.current?.focus();
-      }
-    };
-    document.addEventListener("pointerdown", outside);
-    document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("keydown", escape);
-    };
-  }, [open]);
-  return (
-    <div
-      className="rest-setting"
-      ref={root}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-      }}
-    >
-      <button
-        className="rest-picker-trigger"
-        type="button"
-        ref={trigger}
-        aria-label={`기본 휴식 변경, 현재 ${value ? `${value}초` : "끄기"}`}
-        aria-expanded={open}
-        aria-controls="rest-duration-options"
-        onClick={() => setOpen(!open)}
-      >
-        {value ? `${value}초` : "끄기"}
-        <Icon name="down" size={14} />
-      </button>
-      {open && (
-        <div
-          id="rest-duration-options"
-          className="rest-options"
-          role="group"
-          aria-label="기본 휴식 선택"
-        >
-          <p>기본 휴식</p>
-          <div>
-            {[0, 60, 90, 120].map((seconds) => (
-              <button
-                type="button"
-                key={seconds}
-                aria-pressed={value === seconds}
-                onClick={() => {
-                  onChange(seconds);
-                  setOpen(false);
-                  trigger.current?.focus();
-                }}
-              >
-                {seconds ? `${seconds}초` : "끄기"}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 // The recording action uses the same handler as the routine TDS CTA.
 function WorkoutCTA({
   children,
@@ -486,6 +412,8 @@ function WorkoutApp({
   const sheetClosing = useRef(false);
   const sheetBackPending = useRef(false);
   const afterSheetPage = useRef<Page | null>(null);
+  const pendingWorkoutReturn = useRef(false);
+  const workoutReturn = useRef(() => {});
   const backHandler = useRef<() => void>(() => {});
   const [canGoBack, setCanGoBack] = useState(false);
   const screenKey = `${page}:${page === "workout" && !!data.draft}`;
@@ -584,6 +512,9 @@ function WorkoutApp({
           if (history.state?.communityOverlay) {
             overlayHistoryClosing.current = true;
             history.back();
+          } else if (pendingWorkoutReturn.current) {
+            pendingWorkoutReturn.current = false;
+            workoutReturn.current();
           }
         });
       }
@@ -643,6 +574,10 @@ function WorkoutApp({
     }
     if (overlayHistoryClosing.current) {
       overlayHistoryClosing.current = false;
+      if (pendingWorkoutReturn.current) {
+        pendingWorkoutReturn.current = false;
+        workoutReturn.current();
+      }
       return;
     }
     if (communityOverlay) {
@@ -908,13 +843,15 @@ function WorkoutApp({
     updateDraft((d) => ({
       ...d,
       restUntil: !row.done
-        ? (d.exercises.find((x) => x.id === exerciseId)?.restSeconds ??
-          data.settings?.restSeconds ??
-          90)
+        ? effectiveRestSeconds(
+            data,
+            d.exercises.find((x) => x.id === exerciseId)!,
+          ) > 0
           ? Date.now() +
-            (d.exercises.find((x) => x.id === exerciseId)?.restSeconds ??
-              data.settings?.restSeconds ??
-              90) *
+            effectiveRestSeconds(
+              data,
+              d.exercises.find((x) => x.id === exerciseId)!,
+            ) *
               1000
           : null
         : d.restUntil,
@@ -1032,12 +969,6 @@ function WorkoutApp({
   const elapsed = draft
     ? Math.max(0, Math.floor((now - draft.started) / 1000))
     : 0;
-  const rest = draft?.restUntil
-    ? Math.max(
-        0,
-        Math.ceil((draft.restUntil - Math.max(now, Date.now())) / 1000),
-      )
-    : 0;
   function sessionRow(session: Session) {
     return (
       <div className="overview-record-row" key={session.id}>
@@ -1108,273 +1039,1101 @@ function WorkoutApp({
       </details>
     );
   }
+  const finishWorkoutReturn = () => {
+    if (dialogRef.current?.open) {
+      if (
+        recordEditing &&
+        !confirm("기록 변경 내용을 버리고 운동으로 돌아갈까요?")
+      )
+        return;
+      if (recordEditing) recordDiscardApproved.current = true;
+      afterSheetPage.current = "workout";
+      closeDialog();
+    } else navigate("workout");
+  };
+  workoutReturn.current = finishWorkoutReturn;
+  const returnToWorkout = () => {
+    if (transactionPending.current || sheetClosing.current) return;
+    if (communityOverlay) {
+      pendingWorkoutReturn.current = true;
+      document.dispatchEvent(
+        new CustomEvent("community-back", { detail: { handled: false } }),
+      );
+    } else finishWorkoutReturn();
+  };
+  const activeWorkout = data.draft
+    ? {
+        draft: data.draft,
+        now,
+        defaultSeconds: data.settings?.restSeconds ?? 90,
+        onReturn: returnToWorkout,
+        onDefault: (seconds: number) =>
+          setData((current) => changeDefaultRest(current, seconds)),
+        onStart: () =>
+          updateDraft((d) => ({
+            ...d,
+            restUntil:
+              (data.settings?.restSeconds ?? 90) > 0
+                ? Date.now() + (data.settings?.restSeconds ?? 90) * 1000
+                : null,
+          })),
+        onExtend: () =>
+          updateDraft((d) => ({
+            ...d,
+            restUntil: extendRest(d.restUntil, 30000, Date.now()),
+          })),
+        onSkip: () => updateDraft((d) => ({ ...d, restUntil: null })),
+      }
+    : null;
   const PrimaryWorkoutAction =
     page === "workout" ? WorkoutCTA : BottomCTA.Single;
   return (
-    <div
-      className="app-shell"
-      data-page={page}
-      data-workout-active={page === "workout" && !!draft ? true : undefined}
-    >
-      <main ref={mainRef}>
-        <div className="intro">
-          <span className="eyebrow">
-            <span className="brand-mark">
-              <Icon name="leaf" size={16} />
-            </span>{" "}
-            운동노트
-          </span>
-          <button className="demo-toggle" onClick={() => setDemo(!demo)}>
-            {demo ? "내 기록 보기" : "예시 보기"}
-          </button>
-        </div>
-        {demo && (
-          <div className="demo-banner">
-            <Badge size="small" color="blue" variant="weak">
-              예시 기록
-            </Badge>
-            <span>화면을 둘러보기 위한 샘플 데이터예요.</span>
+    <ActiveWorkoutContext.Provider value={activeWorkout}>
+      <div
+        className="app-shell"
+        data-page={page}
+        data-active-workout={
+          !!data.draft && page !== "workout" ? true : undefined
+        }
+        data-workout-active={page === "workout" && !!draft ? true : undefined}
+      >
+        <main ref={mainRef}>
+          <div className="intro">
+            <span className="eyebrow">
+              <span className="brand-mark">
+                <Icon name="leaf" size={16} />
+              </span>{" "}
+              운동노트
+            </span>
+            <button className="demo-toggle" onClick={() => setDemo(!demo)}>
+              {demo ? "내 기록 보기" : "예시 보기"}
+            </button>
           </div>
-        )}
-        {storageError && (
-          <div className="notice" role="alert">
-            {initial.error
-              ? "저장된 기록을 읽지 못했어요. 기존 데이터를 보호하기 위해 저장을 멈췄어요."
-              : "기기 저장이 안 되고 있어요. 새로고침 전에 다시 저장해 주세요."}
-            <Button
-              size="medium"
-              variant="weak"
-              disabled={isSaving || saveStatus === "saving"}
-              onClick={() => {
-                if (initial.error) location.reload();
-                else void writeSnapshot(JSON.stringify(data));
-              }}
-            >
-              다시 시도
-            </Button>
-          </div>
-        )}
-        {error && (
-          <p className="notice" role="alert">
-            {error}
-          </p>
-        )}
-        {page === "home" && (
-          <>
-            <section className="page-heading home-heading">
-              <p className="meta">{dateLabel(today)}</p>
-              <h1>오늘의 운동</h1>
-            </section>
-            <section className="home-workout">
-              <span className="home-workout-symbol">
-                <Icon name="workout" size={24} />
-              </span>
-              <div className="home-workout-copy">
-                <h2>{draft ? draft.name : "한 세트씩, 나의 페이스로"}</h2>
-                <p>
-                  {draft
-                    ? `${draft.exercises.length}개 종목 · ${countSets(draft.exercises)}세트 완료`
-                    : "지난 운동이나 루틴으로 준비해요."}
-                </p>
-              </div>
+          {demo && (
+            <div className="demo-banner">
+              <Badge size="small" color="blue" variant="weak">
+                예시 기록
+              </Badge>
+              <span>화면을 둘러보기 위한 샘플 데이터예요.</span>
+            </div>
+          )}
+          {storageError && (
+            <div className="notice" role="alert">
+              {initial.error
+                ? "저장된 기록을 읽지 못했어요. 기존 데이터를 보호하기 위해 저장을 멈췄어요."
+                : "기기 저장이 안 되고 있어요. 새로고침 전에 다시 저장해 주세요."}
               <Button
-                display="block"
-                disabled={!!initial.error}
-                onClick={() => navigate("workout")}
+                size="medium"
+                variant="weak"
+                disabled={isSaving || saveStatus === "saving"}
+                onClick={() => {
+                  if (initial.error) location.reload();
+                  else void writeSnapshot(JSON.stringify(data));
+                }}
               >
-                {draft ? "운동 이어하기" : "운동 준비하기"}
+                다시 시도
               </Button>
-            </section>
-            {sessions.length > 0 && (
-              <>
-                <section className="week-card">
-                  <div className="section-heading activity-heading">
-                    <h2>
-                      {homePeriod === "week"
-                        ? "이번 주 운동"
-                        : `${calendarMonth}월 운동`}
-                    </h2>
-                    <div
-                      className="activity-toggle"
-                      role="group"
-                      aria-label="운동 활동 조회 단위"
-                    >
-                      {(["week", "month"] as const).map((value) => (
-                        <Button
-                          key={value}
-                          size="medium"
-                          variant="weak"
-                          color={homePeriod === value ? "primary" : "dark"}
-                          aria-pressed={homePeriod === value}
-                          onClick={() => setHomePeriod(value)}
-                        >
-                          {value === "week" ? "주간" : "월간"}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                  {homePeriod === "week" ? (
-                    <div className="week-strip">
-                      {days.map((d, i) => {
-                        const done = sessions.some(
-                          (s) => dayKey(s.date) === dayKey(d),
-                        );
-                        return (
-                          <div
-                            key={i}
-                            className={`day ${dayKey(d) === dayKey(today) ? "today" : ""}`}
-                          >
-                            <span>
-                              {["월", "화", "수", "목", "금", "토", "일"][i]}
-                            </span>
-                            <div
-                              className={
-                                done ? "day-bubble done" : "day-bubble"
-                              }
-                            >
-                              {done ? (
-                                <Icon name="check" size={19} />
-                              ) : (
-                                d.getDate()
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div
-                      className="month-activity"
-                      aria-label={`${calendarYear}년 ${calendarMonth}월 일별 완료 세트`}
-                    >
+            </div>
+          )}
+          {error && (
+            <p className="notice" role="alert">
+              {error}
+            </p>
+          )}
+          {page === "home" && (
+            <>
+              <section className="page-heading home-heading">
+                <p className="meta">{dateLabel(today)}</p>
+                <h1>오늘의 운동</h1>
+              </section>
+              <section className="home-workout">
+                <span className="home-workout-symbol">
+                  <Icon name="workout" size={24} />
+                </span>
+                <div className="home-workout-copy">
+                  <h2>{draft ? draft.name : "한 세트씩, 나의 페이스로"}</h2>
+                  <p>
+                    {draft
+                      ? `${draft.exercises.length}개 종목 · ${countSets(draft.exercises)}세트 완료`
+                      : "지난 운동이나 루틴으로 준비해요."}
+                  </p>
+                </div>
+                {!draft && (
+                  <Button
+                    display="block"
+                    disabled={!!initial.error}
+                    onClick={() => navigate("workout")}
+                  >
+                    운동 준비하기
+                  </Button>
+                )}
+              </section>
+              {sessions.length > 0 && (
+                <>
+                  <section className="week-card">
+                    <div className="section-heading activity-heading">
+                      <h2>
+                        {homePeriod === "week"
+                          ? "이번 주 운동"
+                          : `${calendarMonth}월 운동`}
+                      </h2>
                       <div
-                        className="month-grid month-weekdays"
-                        aria-hidden="true"
+                        className="activity-toggle"
+                        role="group"
+                        aria-label="운동 활동 조회 단위"
                       >
-                        {["월", "화", "수", "목", "금", "토", "일"].map(
-                          (day) => (
-                            <span key={day}>{day}</span>
-                          ),
-                        )}
-                      </div>
-                      <div className="month-grid">
-                        {monthCells.map((cell, index) =>
-                          cell ? (
-                            <div
-                              key={cell.key}
-                              className={`grass-cell grass-level-${cell.level}${cell.key === dayKey(today) ? " grass-today" : ""}`}
-                              title={`${cell.date}일 · ${cell.sets}세트`}
-                              aria-label={`${cell.date}일, 완료 ${cell.sets}세트`}
-                            >
-                              <span>{cell.date}</span>
-                            </div>
-                          ) : (
-                            <div key={`blank-${index}`} aria-hidden="true" />
-                          ),
-                        )}
-                      </div>
-                      <div className="grass-legend">
-                        <span>완료 세트 적음</span>
-                        {[0, 1, 2, 3, 4].map((level) => (
-                          <span
-                            key={level}
-                            className={`grass-swatch grass-level-${level}`}
-                            aria-hidden="true"
-                          />
+                        {(["week", "month"] as const).map((value) => (
+                          <Button
+                            key={value}
+                            size="medium"
+                            variant="weak"
+                            color={homePeriod === value ? "primary" : "dark"}
+                            aria-pressed={homePeriod === value}
+                            onClick={() => setHomePeriod(value)}
+                          >
+                            {value === "week" ? "주간" : "월간"}
+                          </Button>
                         ))}
-                        <span>많음</span>
                       </div>
                     </div>
-                  )}
-                  <div className="home-metrics">
-                    <div>
-                      <span>운동한 날</span>
-                      <strong>
-                        {homePeriod === "week" ? activeDays : monthDays}
-                        <small>일</small>
-                      </strong>
-                    </div>
-                    <div>
-                      <span>완료 세트</span>
-                      <strong>
-                        {(homePeriod === "week"
-                          ? weekSessions
-                          : monthSessions
-                        ).reduce(
-                          (n, session) => n + countSets(session.exercises),
-                          0,
-                        )}
-                        <small>세트</small>
-                      </strong>
-                    </div>
-                    <div>
-                      <span>운동 시간</span>
-                      <strong>
-                        {Math.ceil(
-                          (homePeriod === "week"
+                    {homePeriod === "week" ? (
+                      <div className="week-strip">
+                        {days.map((d, i) => {
+                          const done = sessions.some(
+                            (s) => dayKey(s.date) === dayKey(d),
+                          );
+                          return (
+                            <div
+                              key={i}
+                              className={`day ${dayKey(d) === dayKey(today) ? "today" : ""}`}
+                            >
+                              <span>
+                                {["월", "화", "수", "목", "금", "토", "일"][i]}
+                              </span>
+                              <div
+                                className={
+                                  done ? "day-bubble done" : "day-bubble"
+                                }
+                              >
+                                {done ? (
+                                  <Icon name="check" size={19} />
+                                ) : (
+                                  d.getDate()
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div
+                        className="month-activity"
+                        aria-label={`${calendarYear}년 ${calendarMonth}월 일별 완료 세트`}
+                      >
+                        <div
+                          className="month-grid month-weekdays"
+                          aria-hidden="true"
+                        >
+                          {["월", "화", "수", "목", "금", "토", "일"].map(
+                            (day) => (
+                              <span key={day}>{day}</span>
+                            ),
+                          )}
+                        </div>
+                        <div className="month-grid">
+                          {monthCells.map((cell, index) =>
+                            cell ? (
+                              <div
+                                key={cell.key}
+                                className={`grass-cell grass-level-${cell.level}${cell.key === dayKey(today) ? " grass-today" : ""}`}
+                                title={`${cell.date}일 · ${cell.sets}세트`}
+                                aria-label={`${cell.date}일, 완료 ${cell.sets}세트`}
+                              >
+                                <span>{cell.date}</span>
+                              </div>
+                            ) : (
+                              <div key={`blank-${index}`} aria-hidden="true" />
+                            ),
+                          )}
+                        </div>
+                        <div className="grass-legend">
+                          <span>완료 세트 적음</span>
+                          {[0, 1, 2, 3, 4].map((level) => (
+                            <span
+                              key={level}
+                              className={`grass-swatch grass-level-${level}`}
+                              aria-hidden="true"
+                            />
+                          ))}
+                          <span>많음</span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="home-metrics">
+                      <div>
+                        <span>운동한 날</span>
+                        <strong>
+                          {homePeriod === "week" ? activeDays : monthDays}
+                          <small>일</small>
+                        </strong>
+                      </div>
+                      <div>
+                        <span>완료 세트</span>
+                        <strong>
+                          {(homePeriod === "week"
                             ? weekSessions
                             : monthSessions
-                          ).reduce((n, session) => n + session.seconds, 0) / 60,
-                        )}
-                        <small>분</small>
-                      </strong>
+                          ).reduce(
+                            (n, session) => n + countSets(session.exercises),
+                            0,
+                          )}
+                          <small>세트</small>
+                        </strong>
+                      </div>
+                      <div>
+                        <span>운동 시간</span>
+                        <strong>
+                          {Math.ceil(
+                            (homePeriod === "week"
+                              ? weekSessions
+                              : monthSessions
+                            ).reduce((n, session) => n + session.seconds, 0) /
+                              60,
+                          )}
+                          <small>분</small>
+                        </strong>
+                      </div>
                     </div>
+                  </section>
+                  <section>
+                    <div className="section-heading">
+                      <h2>최근 운동 기록</h2>
+                      <Button
+                        size="medium"
+                        variant="weak"
+                        color="dark"
+                        onClick={() => navigate("records")}
+                      >
+                        전체 보기
+                      </Button>
+                    </div>
+                    {sessions.length ? (
+                      sessions.slice(0, 3).map(sessionRow)
+                    ) : (
+                      <div className="empty-state">
+                        <span className="tile-icon">
+                          <Icon name="workout" size={24} />
+                        </span>
+                        <h3>첫 기록을 기다리고 있어요</h3>
+                        <p>운동을 마치면 이곳에 차곡차곡 쌓여요.</p>
+                      </div>
+                    )}
+                  </section>
+                  <section className="home-trend">
+                    <div className="section-heading">
+                      <div>
+                        <h2>나의 운동 변화</h2>
+                        <p className="meta">최근 4주 · 완료 세트</p>
+                      </div>
+                      <Button
+                        size="medium"
+                        variant="weak"
+                        color="dark"
+                        onClick={() => navigate("dashboard")}
+                      >
+                        자세히 보기
+                      </Button>
+                    </div>
+                    <div
+                      className="home-bars"
+                      role="img"
+                      aria-label={`최근 4주 완료 세트: ${weekSets.map((v, i) => `${i === 3 ? "이번 주" : `${3 - i}주 전`} ${v}세트`).join(", ")}`}
+                    >
+                      {weekSets.map((v, i) => (
+                        <div className="home-bar-column" key={i}>
+                          <span className="meta">{v}</span>
+                          <div className="home-bar-track">
+                            <div
+                              className={
+                                i === 3 ? "home-bar current" : "home-bar"
+                              }
+                              style={{
+                                height: `${v ? Math.max(4, (v / Math.max(1, ...weekSets)) * 100) : 0}%`,
+                              }}
+                            />
+                          </div>
+                          <span className="meta">
+                            {i === 3 ? "이번 주" : `${3 - i}주 전`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="home-trend-note">
+                      무게와 횟수의 변화는 운동 분석에서 확인해요.
+                    </p>
+                  </section>
+                </>
+              )}
+              {!sessions.length && (
+                <section className="home-empty">
+                  <h2>첫 운동부터 차곡차곡</h2>
+                  <p>운동을 마치면 활동 현황과 최근 기록이 여기에 쌓여요.</p>
+                </section>
+              )}
+              {!demo && (
+                <section className="home-management">
+                  <ListRow
+                    contents={
+                      <ListRow.Texts
+                        type="1RowTypeA"
+                        top="기록 백업 및 가져오기"
+                      />
+                    }
+                    right={<Icon name="arrow" size={20} />}
+                    onClick={() => navigate("manage")}
+                  />
+                </section>
+              )}
+            </>
+          )}
+          {page === "workout" && !draft && (
+            <div className="workout-landing">
+              <Top
+                title={
+                  <Top.TitleParagraph size={22}>운동 기록</Top.TitleParagraph>
+                }
+                subtitleBottom={
+                  <Top.SubtitleParagraph size={15}>
+                    오늘 할 운동을 준비해요
+                  </Top.SubtitleParagraph>
+                }
+              />
+              <section className="prepared-workout" aria-label="시작할 운동">
+                <p className="prepared-label">시작할 운동</p>
+                <h2>
+                  {selectedPersonal
+                    ? selectedPersonal.name
+                    : selectedPrevious
+                      ? selectedPrevious.name
+                      : selectedRoutine === null
+                        ? "자유 운동"
+                        : routines[selectedRoutine].name}
+                </h2>
+                <p className="prepared-description">
+                  {selectedPersonal
+                    ? `${selectedPersonal.exercises.length}개 운동 · ${selectedPersonal.exercises.reduce((n, x) => n + x.sets.length, 0)}세트`
+                    : selectedPrevious
+                      ? `${selectedPrevious.exercises.length}개 운동 · ${countSets(selectedPrevious.exercises)}세트 · ${dateLabel(selectedPrevious.date)} 기록`
+                      : selectedRoutine === null
+                        ? "종목을 직접 추가하며 기록해요"
+                        : `${routines[selectedRoutine].names.length}개 운동 · ${routines[selectedRoutine].names.length * 3}세트`}
+                </p>
+                {selectedPersonal && (
+                  <div className="prepared-exercises">
+                    {selectedPersonal.exercises.map((x, i) => (
+                      <div key={x.id}>
+                        <span className="exercise-order">{i + 1}</span>
+                        <span>
+                          {x.name} · {x.sets.length}세트
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {selectedPrevious && (
+                  <div className="prepared-exercises">
+                    {selectedPrevious.exercises.map((exercise, i) => (
+                      <div key={exercise.id}>
+                        <span className="exercise-order">{i + 1}</span>
+                        <span>
+                          {exercise.name} ·{" "}
+                          {exercise.sets.filter((set) => set.done).length}세트
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {selectedRoutine !== null && (
+                  <div className="prepared-exercises">
+                    {routines[selectedRoutine].names.map((name, i) => (
+                      <div key={name}>
+                        <span className="exercise-order">{i + 1}</span>
+                        <span>{name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+              {!demo && recentSessions.length > 0 && !initial.error && (
+                <section className="recent-workout-picker">
+                  <h2>최근 운동으로 시작</h2>
+                  <p>
+                    지난 무게와 횟수를 불러와요. 완료 상태와 메모는 새로
+                    시작해요.
+                  </p>
+                  <div role="radiogroup" aria-label="최근 운동 선택">
+                    {[null, ...recentSessions].map(
+                      (session, index, options) => {
+                        const selected = session
+                          ? selectedPreviousId === session.id
+                          : selectedPreviousId === null &&
+                            selectedRoutine === null &&
+                            !selectedPersonal;
+                        const select = (next: Session | null) => {
+                          setSelectedPersonalId(null);
+                          setSelectedPreviousId(next?.id ?? null);
+                          setSelectedRoutine(null);
+                        };
+                        return (
+                          <ListRow
+                            key={session?.id ?? "free"}
+                            as="button"
+                            type="button"
+                            role="radio"
+                            className="routine-option"
+                            aria-checked={selected}
+                            tabIndex={
+                              selected ||
+                              (index === 0 && selectedRoutine !== null)
+                                ? 0
+                                : -1
+                            }
+                            id={`recent-workout-${index}`}
+                            border="none"
+                            verticalPadding="large"
+                            withTouchEffect
+                            contents={
+                              <ListRow.Texts
+                                type="2RowTypeA"
+                                top={session?.name ?? "자유 운동"}
+                                bottom={
+                                  session
+                                    ? `${dateLabel(session.date)} · ${countSets(session.exercises)}세트`
+                                    : "종목을 직접 추가하며 기록해요"
+                                }
+                                topProps={{ typography: "t6" }}
+                                bottomProps={{ typography: "t6" }}
+                              />
+                            }
+                            right={
+                              <span
+                                className={`routine-check ${selected ? "is-selected" : ""}`}
+                                aria-hidden="true"
+                              >
+                                {selected && <Icon name="check" size={16} />}
+                              </span>
+                            }
+                            onClick={() => select(session)}
+                            onKeyDown={(event) => {
+                              const delta =
+                                event.key === "ArrowDown" ||
+                                event.key === "ArrowRight"
+                                  ? 1
+                                  : event.key === "ArrowUp" ||
+                                      event.key === "ArrowLeft"
+                                    ? -1
+                                    : 0;
+                              if (!delta) return;
+                              event.preventDefault();
+                              const next =
+                                (index + delta + options.length) %
+                                options.length;
+                              select(options[next]);
+                              document
+                                .getElementById(`recent-workout-${next}`)
+                                ?.focus();
+                            }}
+                          />
+                        );
+                      },
+                    )}
                   </div>
                 </section>
-                <section>
-                  <div className="section-heading">
-                    <h2>최근 운동 기록</h2>
-                    <Button
-                      size="medium"
-                      variant="weak"
-                      color="dark"
-                      onClick={() => navigate("records")}
-                    >
-                      전체 보기
-                    </Button>
+              )}
+              <section className="routine-entry">
+                <ListRow
+                  as="button"
+                  type="button"
+                  className="routine-change-row"
+                  border="none"
+                  arrowType="right"
+                  withTouchEffect
+                  contents={
+                    <ListRow.Texts
+                      type="1RowTypeA"
+                      top={
+                        selectedRoutine === null
+                          ? "추천 루틴에서 선택"
+                          : "루틴 변경"
+                      }
+                      topProps={{ typography: "t6" }}
+                    />
+                  }
+                  onClick={() => navigate("routines")}
+                />
+              </section>
+              {themePicker(false)}
+              <p className="workout-help">
+                {selectedPrevious
+                  ? "불러온 무게와 횟수는 시작 후 조정할 수 있어요."
+                  : selectedRoutine === null
+                    ? "운동을 시작하면 종목과 세트를 추가할 수 있어요."
+                    : "기본 무게와 횟수는 시작 후 조정할 수 있어요."}
+              </p>
+            </div>
+          )}
+          {page === "workout" && !draft && (
+            <PersonalRoutines
+              data={data}
+              persist={persist}
+              catalog={allCatalog}
+              onEditingChange={setRoutineEditing}
+              onStart={(routine) => {
+                setSelectedPersonalId(routine.id);
+                setSelectedPreviousId(null);
+                setSelectedRoutine(null);
+              }}
+            />
+          )}
+          {page === "routines" && (
+            <div className="routine-library">
+              <Top
+                title={
+                  <Top.TitleParagraph size={22}>루틴 선택</Top.TitleParagraph>
+                }
+                subtitleBottom={
+                  <Top.SubtitleParagraph size={15}>
+                    오늘 할 운동에 맞는 루틴을 골라 주세요
+                  </Top.SubtitleParagraph>
+                }
+              />
+              <div
+                className="routine-options"
+                role="radiogroup"
+                aria-label="루틴 선택"
+              >
+                {routineOptions.map((index, optionPosition) => {
+                  const routine = index === null ? null : routines[index];
+                  const selected = pendingRoutine === index;
+                  return (
+                    <ListRow
+                      key={index ?? "free"}
+                      as="button"
+                      type="button"
+                      className="routine-option"
+                      id={`routine-option-${optionPosition}`}
+                      role="radio"
+                      tabIndex={selected ? 0 : -1}
+                      border="none"
+                      aria-checked={selected}
+                      onKeyDown={(event) => {
+                        const directions: Record<string, number> = {
+                          ArrowDown: 1,
+                          ArrowRight: 1,
+                          ArrowUp: -1,
+                          ArrowLeft: -1,
+                        };
+                        const direction = directions[event.key];
+                        if (!direction) return;
+                        event.preventDefault();
+                        const next =
+                          (optionPosition + direction + routineOptions.length) %
+                          routineOptions.length;
+                        setPendingRoutine(routineOptions[next]);
+                        document
+                          .getElementById(`routine-option-${next}`)
+                          ?.focus();
+                      }}
+                      withTouchEffect
+                      verticalPadding="large"
+                      contents={
+                        <ListRow.Texts
+                          type="2RowTypeA"
+                          top={routine?.name ?? "자유 운동"}
+                          bottom={
+                            routine
+                              ? `${routine.subtitle} · ${routine.names.length}개 운동`
+                              : "종목을 직접 추가하며 기록해요"
+                          }
+                          topProps={{ typography: "t6" }}
+                          bottomProps={{ typography: "t6" }}
+                        />
+                      }
+                      right={
+                        <span
+                          className={`routine-check ${selected ? "is-selected" : ""}`}
+                          aria-hidden="true"
+                        >
+                          {selected && <Icon name="check" size={16} />}
+                        </span>
+                      }
+                      onClick={() => setPendingRoutine(index)}
+                    />
+                  );
+                })}
+              </div>
+              {pendingRoutine !== null && (
+                <section className="routine-preview">
+                  <h2>운동 구성</h2>
+                  {routines[pendingRoutine].names.map((name, i) => (
+                    <ListRow
+                      key={name}
+                      border="none"
+                      left={<span className="exercise-order">{i + 1}</span>}
+                      contents={
+                        <ListRow.Texts
+                          type="1RowTypeA"
+                          top={name}
+                          topProps={{ typography: "t6" }}
+                        />
+                      }
+                      right={<span className="routine-set-count">3세트</span>}
+                    />
+                  ))}
+                  <p>무게와 횟수는 운동을 시작한 뒤 바꿀 수 있어요.</p>
+                </section>
+              )}
+              <Button
+                display="block"
+                color="dark"
+                variant="weak"
+                onClick={leaveRoutines}
+              >
+                선택하지 않고 돌아가기
+              </Button>
+            </div>
+          )}
+          {page === "workout" && draft && (
+            <>
+              <section className="page-heading session-heading">
+                <div className="workout-title-row">
+                  <h1>{draft.name}</h1>
+                  {!initial.error && (
+                    <p className="save-status" role="status">
+                      {saveStatus === "saving"
+                        ? "저장 중"
+                        : saveStatus === "error"
+                          ? "저장하지 못했어요"
+                          : "저장됨"}
+                    </p>
+                  )}
+                </div>
+                <div className="session-metrics">
+                  <div>
+                    <span>
+                      <Icon name="time" size={16} /> 운동 시간
+                    </span>
+                    <strong>{clock(elapsed)}</strong>
                   </div>
-                  {sessions.length ? (
-                    sessions.slice(0, 3).map(sessionRow)
-                  ) : (
-                    <div className="empty-state">
-                      <span className="tile-icon">
-                        <Icon name="workout" size={24} />
+                  <div>
+                    <span>완료한 세트</span>
+                    <strong>
+                      {countSets(draft.exercises)}
+                      <small>
+                        {" "}
+                        /{" "}
+                        {draft.exercises.reduce((n, x) => n + x.sets.length, 0)}
+                      </small>
+                    </strong>
+                  </div>
+                </div>
+              </section>
+              <RestControls />
+              {draft.exercises.length === 0 && (
+                <section
+                  className="quick-exercises"
+                  aria-labelledby="quick-exercises-title"
+                >
+                  <h2 id="quick-exercises-title">첫 운동을 골라 주세요</h2>
+                  <p>
+                    {recentExerciseNames.length
+                      ? "최근 했던 운동을 바로 추가해요."
+                      : "누르면 바로 세트를 기록할 수 있어요."}
+                  </p>
+                  <div className="quick-exercise-list">
+                    {quickExercises.map((exercise) => (
+                      <ListRow
+                        key={exercise.name}
+                        as="button"
+                        type="button"
+                        className="quick-exercise-row"
+                        aria-label={`${exercise.name} 추가`}
+                        withTouchEffect
+                        contents={
+                          <ListRow.Texts
+                            type="1RowTypeA"
+                            top={exercise.name}
+                            topProps={{ typography: "t6" }}
+                          />
+                        }
+                        right={
+                          <span className="quick-exercise-action">
+                            <span>{exercise.muscle}</span>
+                            <Icon name="plus" size={16} />
+                          </span>
+                        }
+                        onClick={() => {
+                          const added = makeCurrentExercise(exercise.name);
+                          updateDraft((current) =>
+                            current.exercises.length
+                              ? current
+                              : { ...current, exercises: [added] },
+                          );
+                        }}
+                      />
+                    ))}
+                  </div>
+                  {themePicker(false)}
+                </section>
+              )}
+              {draft.exercises.map((ex) => (
+                <section className="exercise-card" key={ex.id}>
+                  <div className="section-heading">
+                    <span className="exercise-symbol" aria-hidden="true">
+                      <Icon name="workout" size={22} />
+                    </span>
+                    <div>
+                      <h2>{ex.name}</h2>
+                      <span className="meta">
+                        {ex.muscle} · {countSets([ex])} / {ex.sets.length}세트
+                        완료
                       </span>
-                      <h3>첫 기록을 기다리고 있어요</h3>
-                      <p>운동을 마치면 이곳에 차곡차곡 쌓여요.</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="exercise-menu"
+                      aria-label={`${ex.name} 종목 관리`}
+                      id={`exercise-manage-${ex.id}`}
+                      aria-expanded={managedExercise === ex.id}
+                      aria-controls={`exercise-tools-${ex.id}`}
+                      onClick={() =>
+                        setManagedExercise(
+                          managedExercise === ex.id ? null : ex.id,
+                        )
+                      }
+                    >
+                      <Icon name="more" size={20} />
+                    </button>
+                  </div>
+                  {managedExercise === ex.id && (
+                    <div
+                      className="exercise-tools"
+                      id={`exercise-tools-${ex.id}`}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          setManagedExercise(null);
+                          document
+                            .getElementById(`exercise-manage-${ex.id}`)
+                            ?.focus();
+                        }
+                      }}
+                    >
+                      <p className="meta">
+                        {(() => {
+                          const past = previousExercise(data.sessions, ex.name);
+                          const row = past?.exercise.sets.find((x) => x.done);
+                          return past && row
+                            ? `지난 운동 ${dateLabel(past.session.date)} · ${row.weight}kg × ${row.reps}회`
+                            : "첫 기록이에요";
+                        })()}
+                      </p>
+                      <Button
+                        size="small"
+                        onClick={() =>
+                          updateDraft((d) => ({
+                            ...d,
+                            exercises: d.exercises.map((x) =>
+                              x.id === ex.id
+                                ? fillPrevious(x, data.sessions)
+                                : x,
+                            ),
+                          }))
+                        }
+                      >
+                        빈 입력에 지난 값
+                      </Button>
+                      {[-1, 1].map((direction) => (
+                        <Button
+                          key={direction}
+                          size="small"
+                          disabled={
+                            draft.exercises.findIndex((x) => x.id === ex.id) +
+                              direction <
+                              0 ||
+                            draft.exercises.findIndex((x) => x.id === ex.id) +
+                              direction >=
+                              draft.exercises.length
+                          }
+                          onClick={() =>
+                            updateDraft((d) => {
+                              const items = [...d.exercises];
+                              const i = items.findIndex((x) => x.id === ex.id);
+                              [items[i], items[i + direction]] = [
+                                items[i + direction],
+                                items[i],
+                              ];
+                              return { ...d, exercises: items };
+                            })
+                          }
+                        >
+                          {direction === -1 ? "위로 이동" : "아래로 이동"}
+                        </Button>
+                      ))}
+                      <button
+                        className="exercise-delete"
+                        aria-label={`${ex.name} 삭제`}
+                        onClick={() => {
+                          if (
+                            ex.sets.some((row) => row.done) &&
+                            !confirm(`${ex.name}의 완료한 세트도 삭제할까요?`)
+                          )
+                            return;
+                          setManagedExercise(null);
+                          const focusId = draft.exercises.find(
+                            (x) => x.id !== ex.id,
+                          )?.id;
+                          requestAnimationFrame(() =>
+                            document
+                              .getElementById(
+                                focusId
+                                  ? `exercise-manage-${focusId}`
+                                  : "workout-main-action",
+                              )
+                              ?.focus(),
+                          );
+                          updateDraft((d) => ({
+                            ...d,
+                            exercises: d.exercises.filter(
+                              (x) => x.id !== ex.id,
+                            ),
+                          }));
+                        }}
+                      >
+                        종목 삭제
+                      </button>
                     </div>
                   )}
-                </section>
-                <section className="home-trend">
-                  <div className="section-heading">
-                    <div>
-                      <h2>나의 운동 변화</h2>
-                      <p className="meta">최근 4주 · 완료 세트</p>
-                    </div>
-                    <Button
-                      size="medium"
-                      variant="weak"
-                      color="dark"
-                      onClick={() => navigate("dashboard")}
-                    >
-                      자세히 보기
-                    </Button>
+                  <div className="set-grid set-labels">
+                    <span>세트</span>
+                    <span>무게 kg</span>
+                    <span>횟수</span>
+                    <span>완료</span>
                   </div>
-                  <div
-                    className="home-bars"
-                    role="img"
-                    aria-label={`최근 4주 완료 세트: ${weekSets.map((v, i) => `${i === 3 ? "이번 주" : `${3 - i}주 전`} ${v}세트`).join(", ")}`}
+                  {ex.sets.map((s, i) => (
+                    <div
+                      className={`set-grid ${s.done ? "set-done" : ""} ${nextSet?.exerciseId === ex.id && nextSet.setId === s.id ? "set-next" : ""}`}
+                      key={s.id}
+                    >
+                      <span className="set-number">{i + 1}</span>
+                      <input
+                        aria-label={`${ex.name} ${i + 1}세트 무게`}
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        max="2000"
+                        step="0.5"
+                        value={s.weight}
+                        disabled={
+                          s.done ||
+                          data.customExercises?.some(
+                            (x) =>
+                              x.name === ex.name && x.mode === "bodyweight",
+                          )
+                        }
+                        onChange={(e) =>
+                          updateDraft((d) => ({
+                            ...d,
+                            exercises: d.exercises.map((x) =>
+                              x.id === ex.id
+                                ? {
+                                    ...x,
+                                    sets: x.sets.map((row) =>
+                                      row.id === s.id
+                                        ? { ...row, weight: e.target.value }
+                                        : row,
+                                    ),
+                                  }
+                                : x,
+                            ),
+                          }))
+                        }
+                      />
+                      <input
+                        aria-label={`${ex.name} ${i + 1}세트 횟수`}
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        max="999"
+                        step="1"
+                        value={s.reps}
+                        disabled={s.done}
+                        onChange={(e) =>
+                          updateDraft((d) => ({
+                            ...d,
+                            exercises: d.exercises.map((x) =>
+                              x.id === ex.id
+                                ? {
+                                    ...x,
+                                    sets: x.sets.map((row) =>
+                                      row.id === s.id
+                                        ? { ...row, reps: e.target.value }
+                                        : row,
+                                    ),
+                                  }
+                                : x,
+                            ),
+                          }))
+                        }
+                      />
+                      <button
+                        className={`check-button ${s.done ? "checked" : ""}`}
+                        aria-label={`${ex.name} ${i + 1}세트 완료`}
+                        aria-pressed={s.done}
+                        onClick={() => toggleSet(ex.id, s)}
+                      >
+                        <Icon name="check" size={20} />
+                      </button>
+                      <span className="set-previous">
+                        {(() => {
+                          const previous = previousCompletedSet(
+                            data.sessions,
+                            ex.name,
+                            i,
+                          );
+                          const bodyweight =
+                            ex.name === "크런치" ||
+                            data.customExercises?.some(
+                              (x) =>
+                                x.name === ex.name && x.mode === "bodyweight",
+                            );
+                          return previousSetLabel(previous, !!bodyweight);
+                        })()}
+                        {nextSet?.exerciseId === ex.id &&
+                          nextSet.setId === s.id && (
+                            <span className="sr-only"> · 다음 세트</span>
+                          )}
+                      </span>
+                    </div>
+                  ))}
+                  <button
+                    className="add-set"
+                    onClick={() =>
+                      updateDraft((d) => ({
+                        ...d,
+                        exercises: d.exercises.map((x) =>
+                          x.id === ex.id
+                            ? {
+                                ...x,
+                                sets: [
+                                  ...x.sets,
+                                  {
+                                    id: uid(),
+                                    weight:
+                                      x.sets[x.sets.length - 1]?.weight || "0",
+                                    reps:
+                                      x.sets[x.sets.length - 1]?.reps || "10",
+                                    done: false,
+                                  },
+                                ],
+                              }
+                            : x,
+                        ),
+                      }))
+                    }
                   >
-                    {weekSets.map((v, i) => (
-                      <div className="home-bar-column" key={i}>
-                        <span className="meta">{v}</span>
-                        <div className="home-bar-track">
+                    <Icon name="plus" size={16} /> 세트 추가
+                  </button>
+                </section>
+              ))}
+              {draft.exercises.length > 0 && (
+                <button
+                  type="button"
+                  className="workout-add-exercise"
+                  id="add-workout-exercise"
+                  onClick={() => {
+                    setPicker(true);
+                    setMuscle("전체");
+                  }}
+                >
+                  <Icon name="plus" size={20} /> 운동 추가
+                </button>
+              )}
+              {(draft.exercises.length > 0 || draft.note) && (
+                <div className="workout-note">
+                  <label htmlFor="workout-note-input">
+                    운동 메모 <span>선택</span>
+                  </label>
+                  <textarea
+                    id="workout-note-input"
+                    rows={2}
+                    placeholder="오늘의 컨디션이나 다음 운동 목표를 남겨요"
+                    value={draft.note}
+                    onChange={(e) =>
+                      updateDraft((d) => ({ ...d, note: e.target.value }))
+                    }
+                  />
+                </div>
+              )}
+              {draft.exercises.length > 0 && (
+                <p className="footnote">체크한 세트만 기록에 저장돼요.</p>
+              )}
+            </>
+          )}
+          {page === "dashboard" && (
+            <>
+              <section className="page-heading">
+                <p className="meta">기록으로 보는 나의 변화</p>
+                <h1>운동 분석</h1>
+                <p>완료한 운동으로 나의 변화를 확인해요.</p>
+              </section>
+              <div className="period-selector" aria-label="조회 기간">
+                {[7, 28, 90].map((p) => (
+                  <button
+                    key={p}
+                    aria-pressed={p === period}
+                    className={p === period ? "selected" : ""}
+                    onClick={() => setPeriod(p)}
+                  >
+                    {p === 7
+                      ? "최근 1주"
+                      : p === 28
+                        ? "최근 4주"
+                        : "최근 3개월"}
+                  </button>
+                ))}
+              </div>
+              <section className="summary-card">
+                <div className="section-heading">
+                  <h2>운동 요약</h2>
+                  <Badge size="small" color="blue" variant="weak">
+                    최근 {period}일
+                  </Badge>
+                </div>
+                {stats(filtered)}
+              </section>
+              <section className="chart-card">
+                <div className="section-heading">
+                  <div>
+                    <h2>최근 4주 운동량</h2>
+                    <p className="meta">완료한 세트의 무게 × 횟수</p>
+                  </div>
+                  <span className="meta">kg</span>
+                </div>
+                <div
+                  className="volume-chart"
+                  role="img"
+                  aria-label="최근 4주 주간 총 운동량"
+                >
+                  {weekVolumes.map((v, i) => {
+                    const max = Math.max(1, ...weekVolumes);
+                    return (
+                      <div className="chart-column" key={i}>
+                        <span className="meta">{number(v)}</span>
+                        <div className="bar-track">
                           <div
-                            className={
-                              i === 3 ? "home-bar current" : "home-bar"
-                            }
+                            className={`bar ${i === 3 ? "current" : ""}`}
                             style={{
-                              height: `${v ? Math.max(4, (v / Math.max(1, ...weekSets)) * 100) : 0}%`,
+                              height: `${v ? Math.max(3, (v / max) * 100) : 0}%`,
                             }}
                           />
                         </div>
@@ -1382,1273 +2141,469 @@ function WorkoutApp({
                           {i === 3 ? "이번 주" : `${3 - i}주 전`}
                         </span>
                       </div>
-                    ))}
-                  </div>
-                  <p className="home-trend-note">
-                    무게와 횟수의 변화는 운동 분석에서 확인해요.
-                  </p>
-                </section>
-              </>
-            )}
-            {!sessions.length && (
-              <section className="home-empty">
-                <h2>첫 운동부터 차곡차곡</h2>
-                <p>운동을 마치면 활동 현황과 최근 기록이 여기에 쌓여요.</p>
-              </section>
-            )}
-            {!demo && (
-              <section className="home-management">
-                <ListRow
-                  contents={
-                    <ListRow.Texts
-                      type="1RowTypeA"
-                      top="기록 백업 및 가져오기"
-                    />
-                  }
-                  right={<Icon name="arrow" size={20} />}
-                  onClick={() => navigate("manage")}
-                />
-              </section>
-            )}
-          </>
-        )}
-        {page === "workout" && !draft && (
-          <div className="workout-landing">
-            <Top
-              title={
-                <Top.TitleParagraph size={22}>운동 기록</Top.TitleParagraph>
-              }
-              subtitleBottom={
-                <Top.SubtitleParagraph size={15}>
-                  오늘 할 운동을 준비해요
-                </Top.SubtitleParagraph>
-              }
-            />
-            <section className="prepared-workout" aria-label="시작할 운동">
-              <p className="prepared-label">시작할 운동</p>
-              <h2>
-                {selectedPersonal
-                  ? selectedPersonal.name
-                  : selectedPrevious
-                    ? selectedPrevious.name
-                    : selectedRoutine === null
-                      ? "자유 운동"
-                      : routines[selectedRoutine].name}
-              </h2>
-              <p className="prepared-description">
-                {selectedPersonal
-                  ? `${selectedPersonal.exercises.length}개 운동 · ${selectedPersonal.exercises.reduce((n, x) => n + x.sets.length, 0)}세트`
-                  : selectedPrevious
-                    ? `${selectedPrevious.exercises.length}개 운동 · ${countSets(selectedPrevious.exercises)}세트 · ${dateLabel(selectedPrevious.date)} 기록`
-                    : selectedRoutine === null
-                      ? "종목을 직접 추가하며 기록해요"
-                      : `${routines[selectedRoutine].names.length}개 운동 · ${routines[selectedRoutine].names.length * 3}세트`}
-              </p>
-              {selectedPersonal && (
-                <div className="prepared-exercises">
-                  {selectedPersonal.exercises.map((x, i) => (
-                    <div key={x.id}>
-                      <span className="exercise-order">{i + 1}</span>
-                      <span>
-                        {x.name} · {x.sets.length}세트
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {selectedPrevious && (
-                <div className="prepared-exercises">
-                  {selectedPrevious.exercises.map((exercise, i) => (
-                    <div key={exercise.id}>
-                      <span className="exercise-order">{i + 1}</span>
-                      <span>
-                        {exercise.name} ·{" "}
-                        {exercise.sets.filter((set) => set.done).length}세트
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {selectedRoutine !== null && (
-                <div className="prepared-exercises">
-                  {routines[selectedRoutine].names.map((name, i) => (
-                    <div key={name}>
-                      <span className="exercise-order">{i + 1}</span>
-                      <span>{name}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-            {!demo && recentSessions.length > 0 && !initial.error && (
-              <section className="recent-workout-picker">
-                <h2>최근 운동으로 시작</h2>
-                <p>
-                  지난 무게와 횟수를 불러와요. 완료 상태와 메모는 새로 시작해요.
-                </p>
-                <div role="radiogroup" aria-label="최근 운동 선택">
-                  {[null, ...recentSessions].map((session, index, options) => {
-                    const selected = session
-                      ? selectedPreviousId === session.id
-                      : selectedPreviousId === null &&
-                        selectedRoutine === null &&
-                        !selectedPersonal;
-                    const select = (next: Session | null) => {
-                      setSelectedPersonalId(null);
-                      setSelectedPreviousId(next?.id ?? null);
-                      setSelectedRoutine(null);
-                    };
-                    return (
-                      <ListRow
-                        key={session?.id ?? "free"}
-                        as="button"
-                        type="button"
-                        role="radio"
-                        className="routine-option"
-                        aria-checked={selected}
-                        tabIndex={
-                          selected || (index === 0 && selectedRoutine !== null)
-                            ? 0
-                            : -1
-                        }
-                        id={`recent-workout-${index}`}
-                        border="none"
-                        verticalPadding="large"
-                        withTouchEffect
-                        contents={
-                          <ListRow.Texts
-                            type="2RowTypeA"
-                            top={session?.name ?? "자유 운동"}
-                            bottom={
-                              session
-                                ? `${dateLabel(session.date)} · ${countSets(session.exercises)}세트`
-                                : "종목을 직접 추가하며 기록해요"
-                            }
-                            topProps={{ typography: "t6" }}
-                            bottomProps={{ typography: "t6" }}
-                          />
-                        }
-                        right={
-                          <span
-                            className={`routine-check ${selected ? "is-selected" : ""}`}
-                            aria-hidden="true"
-                          >
-                            {selected && <Icon name="check" size={16} />}
-                          </span>
-                        }
-                        onClick={() => select(session)}
-                        onKeyDown={(event) => {
-                          const delta =
-                            event.key === "ArrowDown" ||
-                            event.key === "ArrowRight"
-                              ? 1
-                              : event.key === "ArrowUp" ||
-                                  event.key === "ArrowLeft"
-                                ? -1
-                                : 0;
-                          if (!delta) return;
-                          event.preventDefault();
-                          const next =
-                            (index + delta + options.length) % options.length;
-                          select(options[next]);
-                          document
-                            .getElementById(`recent-workout-${next}`)
-                            ?.focus();
-                        }}
-                      />
                     );
                   })}
                 </div>
-              </section>
-            )}
-            <section className="routine-entry">
-              <ListRow
-                as="button"
-                type="button"
-                className="routine-change-row"
-                border="none"
-                arrowType="right"
-                withTouchEffect
-                contents={
-                  <ListRow.Texts
-                    type="1RowTypeA"
-                    top={
-                      selectedRoutine === null
-                        ? "추천 루틴에서 선택"
-                        : "루틴 변경"
-                    }
-                    topProps={{ typography: "t6" }}
-                  />
-                }
-                onClick={() => navigate("routines")}
-              />
-            </section>
-            {themePicker(false)}
-            <p className="workout-help">
-              {selectedPrevious
-                ? "불러온 무게와 횟수는 시작 후 조정할 수 있어요."
-                : selectedRoutine === null
-                  ? "운동을 시작하면 종목과 세트를 추가할 수 있어요."
-                  : "기본 무게와 횟수는 시작 후 조정할 수 있어요."}
-            </p>
-          </div>
-        )}
-        {page === "workout" && !draft && (
-          <PersonalRoutines
-            data={data}
-            persist={persist}
-            catalog={allCatalog}
-            onEditingChange={setRoutineEditing}
-            onStart={(routine) => {
-              setSelectedPersonalId(routine.id);
-              setSelectedPreviousId(null);
-              setSelectedRoutine(null);
-            }}
-          />
-        )}
-        {page === "routines" && (
-          <div className="routine-library">
-            <Top
-              title={
-                <Top.TitleParagraph size={22}>루틴 선택</Top.TitleParagraph>
-              }
-              subtitleBottom={
-                <Top.SubtitleParagraph size={15}>
-                  오늘 할 운동에 맞는 루틴을 골라 주세요
-                </Top.SubtitleParagraph>
-              }
-            />
-            <div
-              className="routine-options"
-              role="radiogroup"
-              aria-label="루틴 선택"
-            >
-              {routineOptions.map((index, optionPosition) => {
-                const routine = index === null ? null : routines[index];
-                const selected = pendingRoutine === index;
-                return (
-                  <ListRow
-                    key={index ?? "free"}
-                    as="button"
-                    type="button"
-                    className="routine-option"
-                    id={`routine-option-${optionPosition}`}
-                    role="radio"
-                    tabIndex={selected ? 0 : -1}
-                    border="none"
-                    aria-checked={selected}
-                    onKeyDown={(event) => {
-                      const directions: Record<string, number> = {
-                        ArrowDown: 1,
-                        ArrowRight: 1,
-                        ArrowUp: -1,
-                        ArrowLeft: -1,
-                      };
-                      const direction = directions[event.key];
-                      if (!direction) return;
-                      event.preventDefault();
-                      const next =
-                        (optionPosition + direction + routineOptions.length) %
-                        routineOptions.length;
-                      setPendingRoutine(routineOptions[next]);
-                      document
-                        .getElementById(`routine-option-${next}`)
-                        ?.focus();
-                    }}
-                    withTouchEffect
-                    verticalPadding="large"
-                    contents={
-                      <ListRow.Texts
-                        type="2RowTypeA"
-                        top={routine?.name ?? "자유 운동"}
-                        bottom={
-                          routine
-                            ? `${routine.subtitle} · ${routine.names.length}개 운동`
-                            : "종목을 직접 추가하며 기록해요"
-                        }
-                        topProps={{ typography: "t6" }}
-                        bottomProps={{ typography: "t6" }}
-                      />
-                    }
-                    right={
-                      <span
-                        className={`routine-check ${selected ? "is-selected" : ""}`}
-                        aria-hidden="true"
-                      >
-                        {selected && <Icon name="check" size={16} />}
-                      </span>
-                    }
-                    onClick={() => setPendingRoutine(index)}
-                  />
-                );
-              })}
-            </div>
-            {pendingRoutine !== null && (
-              <section className="routine-preview">
-                <h2>운동 구성</h2>
-                {routines[pendingRoutine].names.map((name, i) => (
-                  <ListRow
-                    key={name}
-                    border="none"
-                    left={<span className="exercise-order">{i + 1}</span>}
-                    contents={
-                      <ListRow.Texts
-                        type="1RowTypeA"
-                        top={name}
-                        topProps={{ typography: "t6" }}
-                      />
-                    }
-                    right={<span className="routine-set-count">3세트</span>}
-                  />
-                ))}
-                <p>무게와 횟수는 운동을 시작한 뒤 바꿀 수 있어요.</p>
-              </section>
-            )}
-            <Button
-              display="block"
-              color="dark"
-              variant="weak"
-              onClick={leaveRoutines}
-            >
-              선택하지 않고 돌아가기
-            </Button>
-          </div>
-        )}
-        {page === "workout" && draft && (
-          <>
-            <section className="page-heading session-heading">
-              <div className="workout-title-row">
-                <h1>{draft.name}</h1>
-                {!initial.error && (
-                  <p className="save-status" role="status">
-                    {saveStatus === "saving"
-                      ? "저장 중"
-                      : saveStatus === "error"
-                        ? "저장하지 못했어요"
-                        : "저장됨"}
+                {!sessions.length && (
+                  <p className="footnote">
+                    첫 운동을 기록하면 그래프가 채워져요.
                   </p>
                 )}
-              </div>
-              <div className="session-metrics">
-                <div>
-                  <span>
-                    <Icon name="time" size={16} /> 운동 시간
-                  </span>
-                  <strong>{clock(elapsed)}</strong>
-                </div>
-                <div>
-                  <span>완료한 세트</span>
-                  <strong>
-                    {countSets(draft.exercises)}
-                    <small>
-                      {" "}
-                      / {draft.exercises.reduce((n, x) => n + x.sets.length, 0)}
-                    </small>
-                  </strong>
-                </div>
-              </div>
-            </section>
-            <section className="rest-panel" aria-label="휴식 타이머">
-              <div className="rest-summary">
-                <Icon name="time" size={18} />
-                <strong>
-                  {draft.restUntil === null
-                    ? data.settings?.restSeconds === 0
-                      ? "휴식 꺼짐"
-                      : "휴식 대기"
-                    : rest > 0
-                      ? clock(rest)
-                      : "휴식 완료"}
-                </strong>
-              </div>
-              <RestDurationPicker
-                value={data.settings?.restSeconds ?? 90}
-                onChange={(restSeconds) => {
-                  setData((current) => ({
-                    ...current,
-                    settings: { restSeconds },
-                    draft: current.draft
-                      ? {
-                          ...current.draft,
-                          exercises: current.draft.exercises.map(
-                            (exercise) => ({ ...exercise, restSeconds }),
-                          ),
-                          restUntil:
-                            restSeconds === 0 ? null : current.draft.restUntil,
-                        }
-                      : null,
-                  }));
-                }}
-              />
-              <button
-                className="plain-button"
-                disabled={draft.restUntil === null}
-                onClick={() =>
-                  updateDraft((d) => ({
-                    ...d,
-                    restUntil:
-                      Math.max(Date.now(), d.restUntil ?? Date.now()) + 30000,
-                  }))
-                }
-              >
-                +30초
-              </button>
-              <button
-                className="plain-button"
-                disabled={draft.restUntil === null}
-                aria-label={rest > 0 ? "휴식 건너뛰기" : "휴식 닫기"}
-                onClick={() => updateDraft((d) => ({ ...d, restUntil: null }))}
-              >
-                <Icon name={rest > 0 ? "skip" : "close"} size={18} />
-              </button>
-            </section>
-            {draft.exercises.length === 0 && (
-              <section
-                className="quick-exercises"
-                aria-labelledby="quick-exercises-title"
-              >
-                <h2 id="quick-exercises-title">첫 운동을 골라 주세요</h2>
-                <p>
-                  {recentExerciseNames.length
-                    ? "최근 했던 운동을 바로 추가해요."
-                    : "누르면 바로 세트를 기록할 수 있어요."}
-                </p>
-                <div className="quick-exercise-list">
-                  {quickExercises.map((exercise) => (
-                    <ListRow
-                      key={exercise.name}
-                      as="button"
-                      type="button"
-                      className="quick-exercise-row"
-                      aria-label={`${exercise.name} 추가`}
-                      withTouchEffect
-                      contents={
-                        <ListRow.Texts
-                          type="1RowTypeA"
-                          top={exercise.name}
-                          topProps={{ typography: "t6" }}
-                        />
-                      }
-                      right={
-                        <span className="quick-exercise-action">
-                          <span>{exercise.muscle}</span>
-                          <Icon name="plus" size={16} />
-                        </span>
-                      }
-                      onClick={() => {
-                        const added = makeCurrentExercise(exercise.name);
-                        updateDraft((current) =>
-                          current.exercises.length
-                            ? current
-                            : { ...current, exercises: [added] },
-                        );
-                      }}
-                    />
-                  ))}
-                </div>
-                {themePicker(false)}
               </section>
-            )}
-            {draft.exercises.map((ex) => (
-              <section className="exercise-card" key={ex.id}>
+              <section>
                 <div className="section-heading">
-                  <span className="exercise-symbol" aria-hidden="true">
-                    <Icon name="workout" size={22} />
-                  </span>
-                  <div>
-                    <h2>{ex.name}</h2>
-                    <span className="meta">
-                      {ex.muscle} · {countSets([ex])} / {ex.sets.length}세트
-                      완료
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="exercise-menu"
-                    aria-label={`${ex.name} 종목 관리`}
-                    id={`exercise-manage-${ex.id}`}
-                    aria-expanded={managedExercise === ex.id}
-                    aria-controls={`exercise-tools-${ex.id}`}
-                    onClick={() =>
-                      setManagedExercise(
-                        managedExercise === ex.id ? null : ex.id,
-                      )
-                    }
-                  >
-                    <Icon name="more" size={20} />
-                  </button>
+                  <h2>종목별 최고 기록</h2>
+                  <Icon name="trophy" size={21} />
                 </div>
-                {managedExercise === ex.id && (
-                  <div
-                    className="exercise-tools"
-                    id={`exercise-tools-${ex.id}`}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        setManagedExercise(null);
-                        document
-                          .getElementById(`exercise-manage-${ex.id}`)
-                          ?.focus();
-                      }
-                    }}
-                  >
-                    <p className="meta">
-                      {(() => {
-                        const past = previousExercise(data.sessions, ex.name);
-                        const row = past?.exercise.sets.find((x) => x.done);
-                        return past && row
-                          ? `지난 운동 ${dateLabel(past.session.date)} · ${row.weight}kg × ${row.reps}회`
-                          : "첫 기록이에요";
-                      })()}
-                    </p>
-                    <Button
-                      size="small"
-                      onClick={() =>
-                        updateDraft((d) => ({
-                          ...d,
-                          exercises: d.exercises.map((x) =>
-                            x.id === ex.id ? fillPrevious(x, data.sessions) : x,
-                          ),
-                        }))
-                      }
-                    >
-                      빈 입력에 지난 값
-                    </Button>
-                    {[-1, 1].map((direction) => (
-                      <Button
-                        key={direction}
-                        size="small"
-                        disabled={
-                          draft.exercises.findIndex((x) => x.id === ex.id) +
-                            direction <
-                            0 ||
-                          draft.exercises.findIndex((x) => x.id === ex.id) +
-                            direction >=
-                            draft.exercises.length
-                        }
-                        onClick={() =>
-                          updateDraft((d) => {
-                            const items = [...d.exercises];
-                            const i = items.findIndex((x) => x.id === ex.id);
-                            [items[i], items[i + direction]] = [
-                              items[i + direction],
-                              items[i],
-                            ];
-                            return { ...d, exercises: items };
-                          })
-                        }
-                      >
-                        {direction === -1 ? "위로 이동" : "아래로 이동"}
-                      </Button>
-                    ))}
-                    <button
-                      className="exercise-delete"
-                      aria-label={`${ex.name} 삭제`}
-                      onClick={() => {
-                        if (
-                          ex.sets.some((row) => row.done) &&
-                          !confirm(`${ex.name}의 완료한 세트도 삭제할까요?`)
-                        )
-                          return;
-                        setManagedExercise(null);
-                        const focusId = draft.exercises.find(
-                          (x) => x.id !== ex.id,
-                        )?.id;
-                        requestAnimationFrame(() =>
-                          document
-                            .getElementById(
-                              focusId
-                                ? `exercise-manage-${focusId}`
-                                : "workout-main-action",
-                            )
-                            ?.focus(),
-                        );
-                        updateDraft((d) => ({
-                          ...d,
-                          exercises: d.exercises.filter((x) => x.id !== ex.id),
-                        }));
-                      }}
-                    >
-                      종목 삭제
-                    </button>
+                <p className="meta section-description">
+                  선택한 기간의 최고 세트 무게예요.
+                </p>
+                {filtered.length ? (
+                  [
+                    ...new Set(
+                      filtered.flatMap((s) => s.exercises.map((x) => x.name)),
+                    ),
+                  ].map((name) => {
+                    const sets = filtered.flatMap((s) =>
+                      s.exercises
+                        .filter((x) => x.name === name)
+                        .flatMap((x) => x.sets),
+                    );
+                    const best = sets.reduce((a, b) =>
+                      Number(b.weight) > Number(a.weight) ||
+                      (b.weight === a.weight && Number(b.reps) > Number(a.reps))
+                        ? b
+                        : a,
+                    );
+                    return (
+                      <div className="record-row" key={name}>
+                        <span>{name}</span>
+                        <strong>
+                          {best.weight}kg{" "}
+                          <span className="meta">× {best.reps}회</span>
+                        </strong>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="empty-state">
+                    <Icon name="trophy" size={24} />
+                    <h3>나의 최고 기록을 만들어 봐요</h3>
+                    <p>운동을 기록하면 종목별 기록을 확인할 수 있어요.</p>
                   </div>
                 )}
-                <div className="set-grid set-labels">
-                  <span>세트</span>
-                  <span>무게 kg</span>
-                  <span>횟수</span>
-                  <span>완료</span>
-                </div>
-                {ex.sets.map((s, i) => (
-                  <div
-                    className={`set-grid ${s.done ? "set-done" : ""} ${nextSet?.exerciseId === ex.id && nextSet.setId === s.id ? "set-next" : ""}`}
-                    key={s.id}
-                  >
-                    <span className="set-number">{i + 1}</span>
-                    <input
-                      aria-label={`${ex.name} ${i + 1}세트 무게`}
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      max="2000"
-                      step="0.5"
-                      value={s.weight}
-                      disabled={
-                        s.done ||
-                        data.customExercises?.some(
-                          (x) => x.name === ex.name && x.mode === "bodyweight",
-                        )
-                      }
-                      onChange={(e) =>
-                        updateDraft((d) => ({
-                          ...d,
-                          exercises: d.exercises.map((x) =>
-                            x.id === ex.id
-                              ? {
-                                  ...x,
-                                  sets: x.sets.map((row) =>
-                                    row.id === s.id
-                                      ? { ...row, weight: e.target.value }
-                                      : row,
-                                  ),
-                                }
-                              : x,
-                          ),
-                        }))
-                      }
-                    />
-                    <input
-                      aria-label={`${ex.name} ${i + 1}세트 횟수`}
-                      type="number"
-                      inputMode="numeric"
-                      min="1"
-                      max="999"
-                      step="1"
-                      value={s.reps}
-                      disabled={s.done}
-                      onChange={(e) =>
-                        updateDraft((d) => ({
-                          ...d,
-                          exercises: d.exercises.map((x) =>
-                            x.id === ex.id
-                              ? {
-                                  ...x,
-                                  sets: x.sets.map((row) =>
-                                    row.id === s.id
-                                      ? { ...row, reps: e.target.value }
-                                      : row,
-                                  ),
-                                }
-                              : x,
-                          ),
-                        }))
-                      }
-                    />
-                    <button
-                      className={`check-button ${s.done ? "checked" : ""}`}
-                      aria-label={`${ex.name} ${i + 1}세트 완료`}
-                      aria-pressed={s.done}
-                      onClick={() => toggleSet(ex.id, s)}
-                    >
-                      <Icon name="check" size={20} />
-                    </button>
-                    <span className="set-previous">
-                      {(() => {
-                        const previous = previousCompletedSet(
-                          data.sessions,
-                          ex.name,
-                          i,
-                        );
-                        const bodyweight =
-                          ex.name === "크런치" ||
-                          data.customExercises?.some(
-                            (x) =>
-                              x.name === ex.name && x.mode === "bodyweight",
-                          );
-                        return previousSetLabel(previous, !!bodyweight);
-                      })()}
-                      {nextSet?.exerciseId === ex.id &&
-                        nextSet.setId === s.id && (
-                          <span className="sr-only"> · 다음 세트</span>
-                        )}
-                    </span>
-                  </div>
-                ))}
-                <button
-                  className="add-set"
-                  onClick={() =>
-                    updateDraft((d) => ({
-                      ...d,
-                      exercises: d.exercises.map((x) =>
-                        x.id === ex.id
-                          ? {
-                              ...x,
-                              sets: [
-                                ...x.sets,
-                                {
-                                  id: uid(),
-                                  weight:
-                                    x.sets[x.sets.length - 1]?.weight || "0",
-                                  reps: x.sets[x.sets.length - 1]?.reps || "10",
-                                  done: false,
-                                },
-                              ],
-                            }
-                          : x,
-                      ),
-                    }))
-                  }
-                >
-                  <Icon name="plus" size={16} /> 세트 추가
-                </button>
               </section>
-            ))}
-            {draft.exercises.length > 0 && (
-              <button
-                type="button"
-                className="workout-add-exercise"
-                id="add-workout-exercise"
+              <p className="footnote">
+                기록은 이 기기에 저장돼요. 기기 변경 시 자동으로 옮겨지지
+                않아요.
+              </p>
+            </>
+          )}
+          {page === "dashboard" && (
+            <ExerciseTrends sessions={sessions} period={period} />
+          )}
+          {page === "manage" && (
+            <section className="page-heading">
+              <h1>기록 관리</h1>
+              <p>이 기기의 운동 기록을 백업하고 가져와요.</p>
+            </section>
+          )}
+          {page === "manage" && !demo && (
+            <DataManagement
+              data={data}
+              persist={persist}
+              reservedNames={catalog.map((x) => x.name)}
+            />
+          )}
+          {page === "records" && (
+            <>
+              <section className="page-heading">
+                <h1>전체 운동 기록</h1>
+                <p>{sessions.length}개의 운동을 기록했어요.</p>
+              </section>
+              <section>
+                {sessions.length ? (
+                  sessions.map(sessionRow)
+                ) : (
+                  <p>아직 저장한 운동이 없어요.</p>
+                )}
+              </section>
+            </>
+          )}
+          {["dashboard", "records", "manage"].includes(page) && (
+            <div className="overview-return">
+              <Button
+                variant="weak"
+                display="block"
                 onClick={() => {
-                  setPicker(true);
-                  setMuscle("전체");
+                  if (canGoBack) history.back();
+                  else navigate("home");
                 }}
               >
-                <Icon name="plus" size={20} /> 운동 추가
-              </button>
-            )}
-            {(draft.exercises.length > 0 || draft.note) && (
-              <div className="workout-note">
-                <label htmlFor="workout-note-input">
-                  운동 메모 <span>선택</span>
-                </label>
-                <textarea
-                  id="workout-note-input"
-                  rows={2}
-                  placeholder="오늘의 컨디션이나 다음 운동 목표를 남겨요"
-                  value={draft.note}
-                  onChange={(e) =>
-                    updateDraft((d) => ({ ...d, note: e.target.value }))
-                  }
-                />
-              </div>
-            )}
-            {draft.exercises.length > 0 && (
-              <p className="footnote">체크한 세트만 기록에 저장돼요.</p>
-            )}
-          </>
-        )}
-        {page === "dashboard" && (
-          <>
-            <section className="page-heading">
-              <p className="meta">기록으로 보는 나의 변화</p>
-              <h1>운동 분석</h1>
-              <p>완료한 운동으로 나의 변화를 확인해요.</p>
-            </section>
-            <div className="period-selector" aria-label="조회 기간">
-              {[7, 28, 90].map((p) => (
-                <button
-                  key={p}
-                  aria-pressed={p === period}
-                  className={p === period ? "selected" : ""}
-                  onClick={() => setPeriod(p)}
-                >
-                  {p === 7 ? "최근 1주" : p === 28 ? "최근 4주" : "최근 3개월"}
-                </button>
-              ))}
+                돌아가기
+              </Button>
             </div>
-            <section className="summary-card">
-              <div className="section-heading">
-                <h2>운동 요약</h2>
-                <Badge size="small" color="blue" variant="weak">
-                  최근 {period}일
-                </Badge>
-              </div>
-              {stats(filtered)}
-            </section>
-            <section className="chart-card">
-              <div className="section-heading">
-                <div>
-                  <h2>최근 4주 운동량</h2>
-                  <p className="meta">완료한 세트의 무게 × 횟수</p>
-                </div>
-                <span className="meta">kg</span>
-              </div>
-              <div
-                className="volume-chart"
-                role="img"
-                aria-label="최근 4주 주간 총 운동량"
+          )}
+          {page === "community" && (
+            <Community
+              key={communityTab}
+              sessions={data.sessions}
+              onWorkout={() => navigate("workout")}
+              onShare={setShareSession}
+              refreshKey={communityRefresh}
+              initialTab={communityTab}
+            />
+          )}
+          {page === "dashboard" &&
+            data.sessions.length > 0 &&
+            !draft &&
+            !demo &&
+            !hasSheet &&
+            !communityOverlay && <BannerAd />}
+        </main>
+        {page !== "workout" && <ActiveWorkoutBar />}
+        {!["routines", "dashboard", "records", "manage"].includes(page) && (
+          <nav className="bottom-nav" aria-label="주요 메뉴">
+            {(
+              [
+                { id: "home", label: "홈" },
+                { id: "workout", label: "운동" },
+                { id: "community", label: "커뮤니티" },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                aria-current={page === tab.id ? "page" : undefined}
+                className={page === tab.id ? "active" : ""}
+                onClick={() => navigate(tab.id)}
               >
-                {weekVolumes.map((v, i) => {
-                  const max = Math.max(1, ...weekVolumes);
-                  return (
-                    <div className="chart-column" key={i}>
-                      <span className="meta">{number(v)}</span>
-                      <div className="bar-track">
-                        <div
-                          className={`bar ${i === 3 ? "current" : ""}`}
-                          style={{
-                            height: `${v ? Math.max(3, (v / max) * 100) : 0}%`,
-                          }}
-                        />
-                      </div>
-                      <span className="meta">
-                        {i === 3 ? "이번 주" : `${3 - i}주 전`}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              {!sessions.length && (
-                <p className="footnote">
-                  첫 운동을 기록하면 그래프가 채워져요.
-                </p>
-              )}
-            </section>
-            <section>
-              <div className="section-heading">
-                <h2>종목별 최고 기록</h2>
-                <Icon name="trophy" size={21} />
-              </div>
-              <p className="meta section-description">
-                선택한 기간의 최고 세트 무게예요.
-              </p>
-              {filtered.length ? (
-                [
-                  ...new Set(
-                    filtered.flatMap((s) => s.exercises.map((x) => x.name)),
-                  ),
-                ].map((name) => {
-                  const sets = filtered.flatMap((s) =>
-                    s.exercises
-                      .filter((x) => x.name === name)
-                      .flatMap((x) => x.sets),
-                  );
-                  const best = sets.reduce((a, b) =>
-                    Number(b.weight) > Number(a.weight) ||
-                    (b.weight === a.weight && Number(b.reps) > Number(a.reps))
-                      ? b
-                      : a,
-                  );
-                  return (
-                    <div className="record-row" key={name}>
-                      <span>{name}</span>
-                      <strong>
-                        {best.weight}kg{" "}
-                        <span className="meta">× {best.reps}회</span>
-                      </strong>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="empty-state">
-                  <Icon name="trophy" size={24} />
-                  <h3>나의 최고 기록을 만들어 봐요</h3>
-                  <p>운동을 기록하면 종목별 기록을 확인할 수 있어요.</p>
-                </div>
-              )}
-            </section>
-            <p className="footnote">
-              기록은 이 기기에 저장돼요. 기기 변경 시 자동으로 옮겨지지 않아요.
-            </p>
-          </>
+                <span className="nav-icon">
+                  <Icon name={tab.id} />
+                </span>
+                <span>{tab.label}</span>
+                {tab.id === "workout" && draft && <span className="nav-dot" />}
+              </button>
+            ))}
+          </nav>
         )}
-        {page === "dashboard" && (
-          <ExerciseTrends sessions={sessions} period={period} />
-        )}
-        {page === "manage" && (
-          <section className="page-heading">
-            <h1>기록 관리</h1>
-            <p>이 기기의 운동 기록을 백업하고 가져와요.</p>
-          </section>
-        )}
-        {page === "manage" && !demo && (
-          <DataManagement
-            data={data}
-            persist={persist}
-            reservedNames={catalog.map((x) => x.name)}
-          />
-        )}
-        {page === "records" && (
-          <>
-            <section className="page-heading">
-              <h1>전체 운동 기록</h1>
-              <p>{sessions.length}개의 운동을 기록했어요.</p>
-            </section>
-            <section>
-              {sessions.length ? (
-                sessions.map(sessionRow)
-              ) : (
-                <p>아직 저장한 운동이 없어요.</p>
-              )}
-            </section>
-          </>
-        )}
-        {["dashboard", "records", "manage"].includes(page) && (
-          <div className="overview-return">
-            <Button
-              variant="weak"
-              display="block"
-              onClick={() => {
-                if (canGoBack) history.back();
-                else navigate("home");
-              }}
-            >
-              돌아가기
-            </Button>
-          </div>
-        )}
-        {page === "community" && (
-          <Community
-            key={communityTab}
-            sessions={data.sessions}
-            onWorkout={() => navigate("workout")}
-            onShare={setShareSession}
-            refreshKey={communityRefresh}
-            initialTab={communityTab}
-          />
-        )}
-        {page === "dashboard" &&
-          data.sessions.length > 0 &&
-          !draft &&
-          !demo &&
-          !hasSheet &&
-          !communityOverlay && <BannerAd />}
-      </main>
-      {!["routines", "dashboard", "records", "manage"].includes(page) && (
-        <nav className="bottom-nav" aria-label="주요 메뉴">
-          {(
-            [
-              { id: "home", label: "홈" },
-              { id: "workout", label: "운동" },
-              { id: "community", label: "커뮤니티" },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              aria-current={page === tab.id ? "page" : undefined}
-              className={page === tab.id ? "active" : ""}
-              onClick={() => navigate(tab.id)}
-            >
-              <span className="nav-icon">
-                <Icon name={tab.id} />
-              </span>
-              <span>{tab.label}</span>
-              {tab.id === "workout" && draft && <span className="nav-dot" />}
-            </button>
-          ))}
-        </nav>
-      )}
-      {!routineEditing && (page === "workout" || page === "routines") && (
-        <PrimaryWorkoutAction
-          id="workout-main-action"
-          disabled={isSaving || initial.error}
-          fixed
-          takeSpace={false}
-          hasSafeAreaPadding={page === "routines"}
-          hasPaddingBottom={page === "routines"}
-          containerStyle={{
-            width: "min(100%, 480px)",
-            left: "50%",
-            transform: "translateX(-50%)",
-            bottom: page === "routines" ? 0 : "var(--nav-height)",
-            paddingTop: 12,
-            paddingBottom:
-              page === "routines" ? "max(34px, var(--safe-bottom))" : 16,
-            zIndex: 9,
-          }}
-          onClick={() => {
-            if (saving.current || initial.error) return;
-            if (page === "routines") {
-              setSelectedPreviousId(null);
-              setSelectedPersonalId(null);
-              setSelectedRoutine(pendingRoutine);
-              if (draft && !draft.exercises.length && pendingRoutine !== null) {
-                const routine = routines[pendingRoutine];
-                updateDraft((current) => ({
-                  ...current,
-                  name: routine.name,
-                  exercises: routine.names.map(makeCurrentExercise),
-                }));
-              }
-              leaveRoutines();
-            } else if (draft && !draft.exercises.length) {
-              setPicker(true);
-              setMuscle("전체");
-            } else if (draft) finish();
-            else if (selectedPersonal) {
-              setData((current) =>
-                current.draft
-                  ? current
-                  : {
-                      ...current,
-                      draft: {
-                        name: selectedPersonal.name,
-                        started: Date.now(),
-                        note: "",
-                        restUntil: null,
-                        exercises: selectedPersonal.exercises.map((x) => ({
-                          ...x,
-                          id: uid(),
-                          sets: x.sets.map((row) => ({
-                            ...row,
+        {!routineEditing && (page === "workout" || page === "routines") && (
+          <PrimaryWorkoutAction
+            id="workout-main-action"
+            disabled={isSaving || initial.error}
+            fixed
+            takeSpace={false}
+            hasSafeAreaPadding={page === "routines"}
+            hasPaddingBottom={page === "routines"}
+            containerStyle={{
+              width: "min(100%, 480px)",
+              left: "50%",
+              transform: "translateX(-50%)",
+              bottom: page === "routines" ? 0 : "var(--nav-height)",
+              paddingTop: 12,
+              paddingBottom:
+                page === "routines" ? "max(34px, var(--safe-bottom))" : 16,
+              zIndex: 9,
+            }}
+            onClick={() => {
+              if (saving.current || initial.error) return;
+              if (page === "routines") {
+                setSelectedPreviousId(null);
+                setSelectedPersonalId(null);
+                setSelectedRoutine(pendingRoutine);
+                if (
+                  draft &&
+                  !draft.exercises.length &&
+                  pendingRoutine !== null
+                ) {
+                  const routine = routines[pendingRoutine];
+                  updateDraft((current) => ({
+                    ...current,
+                    name: routine.name,
+                    exercises: routine.names.map(makeCurrentExercise),
+                  }));
+                }
+                leaveRoutines();
+              } else if (draft && !draft.exercises.length) {
+                setPicker(true);
+                setMuscle("전체");
+              } else if (draft) finish();
+              else if (selectedPersonal) {
+                setData((current) =>
+                  current.draft
+                    ? current
+                    : {
+                        ...current,
+                        draft: {
+                          name: selectedPersonal.name,
+                          started: Date.now(),
+                          note: "",
+                          restUntil: null,
+                          exercises: selectedPersonal.exercises.map((x) => ({
+                            ...x,
                             id: uid(),
-                            done: false,
+                            sets: x.sets.map((row) => ({
+                              ...row,
+                              id: uid(),
+                              done: false,
+                            })),
                           })),
-                        })),
+                        },
                       },
-                    },
-              );
-              navigate("workout");
-            } else if (selectedPrevious) {
-              setDemo(false);
-              setError("");
-              const started = Date.now();
-              setData((current) =>
-                prepareRepeat(current, selectedPrevious, started, uid),
-              );
-              navigate("workout");
-            } else {
-              const routine =
-                selectedRoutine === null ? null : routines[selectedRoutine];
-              start(routine?.names ?? [], routine?.name ?? "자유 운동");
-            }
+                );
+                navigate("workout");
+              } else if (selectedPrevious) {
+                setDemo(false);
+                setError("");
+                const started = Date.now();
+                setData((current) =>
+                  prepareRepeat(current, selectedPrevious, started, uid),
+                );
+                navigate("workout");
+              } else {
+                const routine =
+                  selectedRoutine === null ? null : routines[selectedRoutine];
+                start(routine?.names ?? [], routine?.name ?? "자유 운동");
+              }
+            }}
+          >
+            {page === "routines"
+              ? pendingRoutine === null
+                ? "자유 운동으로 선택"
+                : `${routines[pendingRoutine].name} 선택`
+              : draft
+                ? !draft.exercises.length
+                  ? "다른 운동 찾기"
+                  : isSaving
+                    ? "기록 저장 중"
+                    : "운동 마치고 저장"
+                : selectedPersonal
+                  ? `${selectedPersonal.name} 시작`
+                  : selectedPrevious
+                    ? "지난 운동 다시 시작"
+                    : selectedRoutine === null
+                      ? "자유 운동 시작"
+                      : `${routines[selectedRoutine].name} 시작`}
+          </PrimaryWorkoutAction>
+        )}
+        <dialog
+          ref={dialogRef}
+          className="sheet"
+          onCancel={(event) => {
+            event.preventDefault();
+            closeDialog();
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeDialog();
           }}
         >
-          {page === "routines"
-            ? pendingRoutine === null
-              ? "자유 운동으로 선택"
-              : `${routines[pendingRoutine].name} 선택`
-            : draft
-              ? !draft.exercises.length
-                ? "다른 운동 찾기"
-                : isSaving
-                  ? "기록 저장 중"
-                  : "운동 마치고 저장"
-              : selectedPersonal
-                ? `${selectedPersonal.name} 시작`
-                : selectedPrevious
-                  ? "지난 운동 다시 시작"
-                  : selectedRoutine === null
-                    ? "자유 운동 시작"
-                    : `${routines[selectedRoutine].name} 시작`}
-        </PrimaryWorkoutAction>
-      )}
-      <dialog
-        ref={dialogRef}
-        className="sheet"
-        onCancel={(event) => {
-          event.preventDefault();
-          closeDialog();
-        }}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) closeDialog();
-        }}
-      >
-        <div className="sheet-content">
-          <div className="sheet-handle" />
-          <div className="section-heading">
-            <h2>
-              {picker
-                ? "운동 추가"
-                : finished
-                  ? "오늘의 운동 완료"
-                  : "운동 기록"}
-            </h2>
-            <button
-              className="icon-button"
-              aria-label="닫기"
-              onClick={closeDialog}
-            >
-              <Icon name="close" />
-            </button>
-          </div>
-          {picker && (
-            <>
-              <label className="search-field">
-                <Icon name="search" size={20} />
-                <input
-                  aria-label="운동 검색"
-                  placeholder="운동 이름을 검색해요"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  autoFocus
+          <div className="sheet-content">
+            <div className="sheet-handle" />
+            <ActiveWorkoutBar inline />
+            <div className="section-heading">
+              <h2>
+                {picker
+                  ? "운동 추가"
+                  : finished
+                    ? "오늘의 운동 완료"
+                    : "운동 기록"}
+              </h2>
+              <button
+                className="icon-button"
+                aria-label="닫기"
+                onClick={closeDialog}
+              >
+                <Icon name="close" />
+              </button>
+            </div>
+            {picker && (
+              <>
+                <label className="search-field">
+                  <Icon name="search" size={20} />
+                  <input
+                    aria-label="운동 검색"
+                    placeholder="운동 이름을 검색해요"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    autoFocus
+                  />
+                </label>
+                <div className="muscle-filters">
+                  {["전체", "가슴", "등", "하체", "어깨", "팔", "복근"].map(
+                    (m) => (
+                      <button
+                        key={m}
+                        className={muscle === m ? "selected" : ""}
+                        aria-pressed={muscle === m}
+                        onClick={() => setMuscle(m)}
+                      >
+                        {m}
+                      </button>
+                    ),
+                  )}
+                </div>
+                <CustomExerciseCreator
+                  data={data}
+                  persist={persist}
+                  catalog={allCatalog}
+                  onAdded={(exercise) => {
+                    updateDraft((d) => ({
+                      ...d,
+                      exercises: [...d.exercises, exercise],
+                    }));
+                    closeDialog();
+                  }}
                 />
-              </label>
-              <div className="muscle-filters">
-                {["전체", "가슴", "등", "하체", "어깨", "팔", "복근"].map(
-                  (m) => (
-                    <button
-                      key={m}
-                      className={muscle === m ? "selected" : ""}
-                      aria-pressed={muscle === m}
-                      onClick={() => setMuscle(m)}
-                    >
-                      {m}
-                    </button>
-                  ),
-                )}
-              </div>
-              <CustomExerciseCreator
-                data={data}
-                persist={persist}
-                catalog={allCatalog}
-                onAdded={(exercise) => {
-                  updateDraft((d) => ({
-                    ...d,
-                    exercises: [...d.exercises, exercise],
-                  }));
-                  closeDialog();
-                }}
-              />
-              <div className="picker-list">
-                {allCatalog
-                  .filter(
+                <div className="picker-list">
+                  {allCatalog
+                    .filter(
+                      (x) =>
+                        x.name.includes(query) &&
+                        (muscle === "전체" || x.muscle === muscle),
+                    )
+                    .map((x) => (
+                      <button
+                        key={x.name}
+                        className="picker-row"
+                        onClick={() => {
+                          if (sheetClosing.current) return;
+                          updateDraft((d) => ({
+                            ...d,
+                            exercises: [
+                              ...d.exercises,
+                              makeCurrentExercise(x.name),
+                            ],
+                          }));
+                          closeDialog();
+                        }}
+                      >
+                        <span>
+                          <strong>{x.name}</strong>
+                          <span className="meta">{x.muscle}</span>
+                        </span>
+                        <Icon name="plus" size={20} />
+                      </button>
+                    ))}
+                  {!allCatalog.some(
                     (x) =>
                       x.name.includes(query) &&
                       (muscle === "전체" || x.muscle === muscle),
-                  )
-                  .map((x) => (
-                    <button
-                      key={x.name}
-                      className="picker-row"
+                  ) && (
+                    <div className="empty-state">
+                      <p>검색 결과가 없어요. 다른 이름으로 찾아보세요.</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+            {(detail || finished) &&
+              (() => {
+                const s = (detail || finished)!;
+                return (
+                  <>
+                    <div className="completion-icon">
+                      <Icon name={finished ? "check" : "workout"} size={24} />
+                    </div>
+                    <h2 className="detail-title">{s.name}</h2>
+                    <p className="meta detail-title">
+                      {dateLabel(s.date)} ·{" "}
+                      {Math.max(1, Math.round(s.seconds / 60))}분
+                    </p>
+                    {stats([s])}
+                    {s.exercises.map((x) => (
+                      <div className="detail-exercise" key={x.id}>
+                        <strong>{x.name}</strong>
+                        {x.sets.map((row, i) => (
+                          <p key={row.id}>
+                            <span className="meta">{i + 1}세트</span>
+                            <span>
+                              {row.weight}kg × {row.reps}회
+                            </span>
+                          </p>
+                        ))}
+                      </div>
+                    ))}
+                    {s.note && (
+                      <p className="saved-note">
+                        {s.note
+                          .split(
+                            /(\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*)/gu,
+                          )
+                          .map((part, i) =>
+                            /\p{Extended_Pictographic}/u.test(part) ? (
+                              <span className="tf" key={i}>
+                                {part}
+                              </span>
+                            ) : (
+                              part
+                            ),
+                          )}
+                      </p>
+                    )}
+                    {!demo && (
+                      <RecordActions
+                        key={s.id}
+                        data={data}
+                        persist={persist}
+                        session={s}
+                        onEditingChange={setRecordEditing}
+                        onChange={(updated) => {
+                          if (detail) setDetail(updated);
+                          else setFinished(updated);
+                        }}
+                        onClose={closeDialog}
+                      />
+                    )}
+                    {!demo && !recordEditing && (
+                      <Button
+                        variant="weak"
+                        display="block"
+                        onClick={() => setShareSession(s)}
+                      >
+                        운동 인증하기
+                      </Button>
+                    )}
+                    <Button
+                      display="block"
                       onClick={() => {
-                        if (sheetClosing.current) return;
-                        updateDraft((d) => ({
-                          ...d,
-                          exercises: [
-                            ...d.exercises,
-                            makeCurrentExercise(x.name),
-                          ],
-                        }));
+                        if (finished) afterSheetPage.current = "home";
                         closeDialog();
                       }}
                     >
-                      <span>
-                        <strong>{x.name}</strong>
-                        <span className="meta">{x.muscle}</span>
-                      </span>
-                      <Icon name="plus" size={20} />
-                    </button>
-                  ))}
-                {!allCatalog.some(
-                  (x) =>
-                    x.name.includes(query) &&
-                    (muscle === "전체" || x.muscle === muscle),
-                ) && (
-                  <div className="empty-state">
-                    <p>검색 결과가 없어요. 다른 이름으로 찾아보세요.</p>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-          {(detail || finished) &&
-            (() => {
-              const s = (detail || finished)!;
-              return (
-                <>
-                  <div className="completion-icon">
-                    <Icon name={finished ? "check" : "workout"} size={24} />
-                  </div>
-                  <h2 className="detail-title">{s.name}</h2>
-                  <p className="meta detail-title">
-                    {dateLabel(s.date)} ·{" "}
-                    {Math.max(1, Math.round(s.seconds / 60))}분
-                  </p>
-                  {stats([s])}
-                  {s.exercises.map((x) => (
-                    <div className="detail-exercise" key={x.id}>
-                      <strong>{x.name}</strong>
-                      {x.sets.map((row, i) => (
-                        <p key={row.id}>
-                          <span className="meta">{i + 1}세트</span>
-                          <span>
-                            {row.weight}kg × {row.reps}회
-                          </span>
-                        </p>
-                      ))}
-                    </div>
-                  ))}
-                  {s.note && (
-                    <p className="saved-note">
-                      {s.note
-                        .split(
-                          /(\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*)/gu,
-                        )
-                        .map((part, i) =>
-                          /\p{Extended_Pictographic}/u.test(part) ? (
-                            <span className="tf" key={i}>
-                              {part}
-                            </span>
-                          ) : (
-                            part
-                          ),
-                        )}
-                    </p>
-                  )}
-                  {!demo && (
-                    <RecordActions
-                      key={s.id}
-                      data={data}
-                      persist={persist}
-                      session={s}
-                      onEditingChange={setRecordEditing}
-                      onChange={(updated) => {
-                        if (detail) setDetail(updated);
-                        else setFinished(updated);
-                      }}
-                      onClose={closeDialog}
-                    />
-                  )}
-                  {!demo && !recordEditing && (
-                    <Button
-                      variant="weak"
-                      display="block"
-                      onClick={() => setShareSession(s)}
-                    >
-                      운동 인증하기
+                      {finished ? "홈으로 돌아가기" : "확인"}
                     </Button>
-                  )}
-                  <Button
-                    display="block"
-                    onClick={() => {
-                      if (finished) afterSheetPage.current = "home";
-                      closeDialog();
-                    }}
-                  >
-                    {finished ? "홈으로 돌아가기" : "확인"}
-                  </Button>
-                </>
+                  </>
+                );
+              })()}
+          </div>
+        </dialog>
+        {shareSession && (
+          <ShareWorkout
+            key={shareSession.id}
+            session={shareSession}
+            onClose={() => setShareSession(null)}
+            onPublished={() => {
+              setShareSession(null);
+              setDetail(null);
+              setFinished(null);
+              setCommunityTab("mine");
+              setCommunityRefresh((value) => value + 1);
+              history.replaceState(
+                {
+                  workoutNavigation: true,
+                  page: "community",
+                  depth: (history.state?.depth ?? 0) + 1,
+                },
+                "",
+                "#community",
               );
-            })()}
-        </div>
-      </dialog>
-      {shareSession && (
-        <ShareWorkout
-          key={shareSession.id}
-          session={shareSession}
-          onClose={() => setShareSession(null)}
-          onPublished={() => {
-            setShareSession(null);
-            setDetail(null);
-            setFinished(null);
-            setCommunityTab("mine");
-            setCommunityRefresh((value) => value + 1);
-            history.replaceState(
-              {
-                workoutNavigation: true,
-                page: "community",
-                depth: (history.state?.depth ?? 0) + 1,
-              },
-              "",
-              "#community",
-            );
-            setCanGoBack(true);
-            setPage("community");
-            mainRef.current?.scrollTo(0, 0);
-          }}
-        />
-      )}
-    </div>
+              setCanGoBack(true);
+              setPage("community");
+              mainRef.current?.scrollTo(0, 0);
+            }}
+          />
+        )}
+      </div>
+    </ActiveWorkoutContext.Provider>
   );
 }
 function App() {

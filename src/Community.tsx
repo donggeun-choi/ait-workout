@@ -16,6 +16,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { ActiveWorkoutBar } from "./ActiveWorkout";
 import { workoutDay, type Session } from "./workout-model";
 import {
   CommunityError,
@@ -82,7 +83,10 @@ function Modal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      {children}
+      <div className="community-modal-content">
+        <ActiveWorkoutBar inline />
+        {children}
+      </div>
     </dialog>
   );
 }
@@ -411,7 +415,9 @@ export function Community({
   const [notice, setNotice] = useState("");
   const serial = useRef(0);
   const mutationSequence = useRef(0);
-  const mutations = useRef(new Map<string, { sequence: number; post: CommunityPost | null }>());
+  const mutations = useRef(
+    new Map<string, { sequence: number; post: CommunityPost | null }>(),
+  );
   const blockedAuthors = useRef(new Map<string, number>());
   const actionLock = useRef(false);
   const actionOwner = useRef(account?.id);
@@ -441,10 +447,15 @@ export function Community({
       const result = await communityRequest<Feed>(
         `${tab === 1 ? "/me/posts" : "/feed"}${append && feed.nextCursor ? `?cursor=${encodeURIComponent(feed.nextCursor)}` : ""}`,
       );
-      const posts = result.posts.flatMap(post => {
-        if ((blockedAuthors.current.get(post.authorId) ?? 0) > beforeMutations) return [];
+      const posts = result.posts.flatMap((post) => {
+        if ((blockedAuthors.current.get(post.authorId) ?? 0) > beforeMutations)
+          return [];
         const changed = mutations.current.get(post.id);
-        return changed && changed.sequence > beforeMutations ? changed.post ? [changed.post] : [] : [post];
+        return changed && changed.sequence > beforeMutations
+          ? changed.post
+            ? [changed.post]
+            : []
+          : [post];
       });
       if (generation === serial.current)
         setFeed((previous) => ({
@@ -505,10 +516,13 @@ export function Community({
         { active: !post.cheeredByMe },
       );
       if (activeTab.current !== requestedTab) return;
-      mutations.current.set(post.id, { sequence: ++mutationSequence.current, post: result.post });
+      mutations.current.set(post.id, {
+        sequence: ++mutationSequence.current,
+        post: result.post,
+      });
       setFeed((f) => ({
         ...f,
-        posts: f.posts.some(p => p.id === post.id)
+        posts: f.posts.some((p) => p.id === post.id)
           ? f.posts.map((p) => (p.id === post.id ? result.post : p))
           : [result.post, ...f.posts],
       }));
@@ -526,7 +540,8 @@ export function Community({
       }
       const sequence = ++mutationSequence.current;
       mutations.current.set(target.id, { sequence, post: null });
-      if (body && "active" in (body as object)) blockedAuthors.current.set(target.authorId, sequence);
+      if (body && "active" in (body as object))
+        blockedAuthors.current.set(target.authorId, sequence);
       setFeed((f) => ({
         ...f,
         posts: f.posts.filter(

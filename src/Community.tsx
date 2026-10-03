@@ -84,6 +84,65 @@ function Modal({
     </dialog>
   );
 }
+function CommunityPolicy() {
+  const [policy, setPolicy] = useState<{
+    rules: string[];
+    retentionDays: number;
+    policyUrl: string | null;
+    operatorContact: string | null;
+  } | null>(null);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let active = true;
+    void communityRequest<NonNullable<typeof policy>>("/policy")
+      .then((value) => {
+        if (active) {
+          setPolicy(value);
+          setError("");
+        }
+      })
+      .catch((reason) => {
+        if (active) setError(message(reason));
+      });
+    return () => {
+      active = false;
+    };
+  }, [attempt]);
+  if (error)
+    return (
+      <div>
+        <p role="status">운영 정책을 불러오지 못했어요. {error}</p>
+        <Button
+          variant="weak"
+          size="small"
+          onClick={() => setAttempt((n) => n + 1)}
+        >
+          정책 다시 보기
+        </Button>
+      </div>
+    );
+  if (!policy) return <p role="status">운영 정책을 확인하고 있어요.</p>;
+  return (
+    <div className="community-policy">
+      {policy.rules.map((rule) => (
+        <p key={rule}>{rule}</p>
+      ))}
+      <p>
+        신고·운영 기록은 {policy.retentionDays}일 보관해요. 개인 기기의 운동
+        기록은 커뮤니티 서버로 동기화하지 않아요.
+      </p>
+      <p>운영 문의: {policy.operatorContact || "운영 문의처 준비 중"}</p>
+      {policy.policyUrl && /^https:\/\//.test(policy.policyUrl) ? (
+        <a href={policy.policyUrl} target="_blank" rel="noreferrer">
+          개인정보 처리 안내 보기
+        </a>
+      ) : (
+        <p>개인정보 처리 안내를 준비 중이에요.</p>
+      )}
+    </div>
+  );
+}
 function CloseIcon() {
   return (
     <Asset.ContentIcon
@@ -232,6 +291,7 @@ export function ShareWorkout({
             </Button>
           </div>
           <p>앱 사용자 누구나 볼 수 있어요. 개인 메모는 공개하지 않아요.</p>
+          <CommunityPolicy />
           {(!account?.rulesAccepted || !account.nickname) && (
             <>
               <TextField
@@ -341,6 +401,7 @@ export function Community({
   const [settings, setSettings] = useState(false);
   const [blocks, setBlocks] = useState<{ id: string; nickname: string }[]>([]);
   const [withdraw, setWithdraw] = useState(false);
+  const [notice, setNotice] = useState("");
   const serial = useRef(0);
   const actionLock = useRef(false);
   async function load(append = false) {
@@ -439,6 +500,7 @@ export function Community({
           <Top.TitleParagraph size={22}>함께 이어가는 운동</Top.TitleParagraph>
         }
       />
+      {notice && <p role="status">{notice}</p>}
       <Tab onChange={setTab}>
         <Tab.Item selected={tab === 0}>최신 인증</Tab.Item>
         <Tab.Item selected={tab === 1}>내 인증</Tab.Item>
@@ -658,6 +720,7 @@ export function Community({
               </Button>
             </div>
             <p>{account?.nickname || "닉네임 미설정"}</p>
+            <CommunityPolicy />
             {!blocks.length && <p>차단한 사용자가 없어요.</p>}
             {blocks.map((person) => (
               <ListRow
@@ -708,7 +771,15 @@ export function Community({
                   disabled={busy}
                   onClick={() =>
                     void action(async () => {
-                      await communityRequest("/me", "DELETE");
+                      const result = await communityRequest<{
+                        ok: true;
+                        remoteDisconnected: boolean;
+                      }>("/me", "DELETE");
+                      setNotice(
+                        result.remoteDisconnected
+                          ? "커뮤니티에서 탈퇴했어요. 이 기기의 개인 운동 기록은 그대로 남아요."
+                          : "커뮤니티 데이터는 삭제했어요. 토스 앱의 연결 관리에서 로그인 연결도 해제해 주세요. 이 기기의 개인 운동 기록은 그대로 남아요.",
+                      );
                       auth.clear();
                       setSettings(false);
                       setWithdraw(false);

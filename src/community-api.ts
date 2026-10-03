@@ -166,6 +166,11 @@ export function errorText(code: string) {
         INVALID_PAYLOAD: "입력 내용과 글자 수를 확인해 주세요.",
         SELF_CHEER: "내 인증에는 응원할 수 없어요.",
         PROFILE_REQUIRED: "닉네임과 커뮤니티 규칙 동의를 확인해 주세요.",
+        POST_HIDDEN:
+          "이 운동 인증은 운영 정책에 따라 숨겨졌어요. 운영 문의처에 문의해 주세요.",
+        POST_DELETED:
+          "삭제한 인증이에요. 다시 올리려면 내용을 확인하고 새로 작성해 주세요.",
+        IDEMPOTENCY_CONFLICT: "게시 내용이 변경됐어요. 다시 시도해 주세요.",
         POST_NOT_FOUND: "삭제되거나 숨겨진 인증이에요. 새로고침해 주세요.",
         RATE_LIMITED: "요청이 많아요. 잠시 후 다시 시도해 주세요.",
         TOSS_AUTH_UNAVAILABLE: "토스 로그인 연결을 준비 중이에요.",

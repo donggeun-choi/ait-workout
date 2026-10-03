@@ -11,6 +11,7 @@ import {
   sessionsCsv,
   validSession,
   validSet,
+  workoutDay,
 } from "./workout-model";
 const uid = () => crypto.randomUUID();
 type Props = { data: Saved; persist: (next: Saved) => Promise<boolean> };
@@ -65,9 +66,7 @@ export function RecordActions({
               type="date"
               value={
                 Number.isFinite(Date.parse(edit.date))
-                  ? new Date(edit.date).toLocaleDateString("sv-SE", {
-                      timeZone: "Asia/Seoul",
-                    })
+                  ? workoutDay(edit.date)
                   : ""
               }
               onChange={(e) =>
@@ -162,7 +161,7 @@ export function RecordActions({
             onClick={() => {
               if (
                 !confirm(
-                  `${session.date.slice(0, 10)} ${session.name} 기록을 삭제할까요? 공개 인증은 별도로 남아 있어요.`,
+                  `${workoutDay(session.date)} ${session.name} 기록을 삭제할까요? 공개 인증은 별도로 남아 있어요.`,
                 )
               )
                 return;
@@ -545,7 +544,7 @@ export function ExerciseTrends({ sessions }: { sessions: Session[] }) {
               <tbody>
                 {rows.map((row, i) => (
                   <tr key={i}>
-                    <td>{row.date.slice(0, 10)}</td>
+                    <td>{workoutDay(row.date)}</td>
                     <td>{row.sets}</td>
                     <td>{row.reps}</td>
                     <td>{row.maxWeight}</td>
@@ -561,7 +560,11 @@ export function ExerciseTrends({ sessions }: { sessions: Session[] }) {
     </section>
   );
 }
-export function DataManagement({ data, persist }: Props) {
+export function DataManagement({
+  data,
+  persist,
+  reservedNames = [],
+}: Props & { reservedNames?: string[] }) {
   const [open, setOpen] = useState(false);
   const [raw, setRaw] = useState("");
   const [incoming, setIncoming] = useState<Saved | null>(null);
@@ -598,7 +601,7 @@ export function DataManagement({ data, persist }: Props) {
       "파일 저장을 지원하지 않는 환경에서는 아래 내용을 복사해 보관해 주세요.",
     );
   }
-  const preview = incoming ? mergeBackup(data, incoming) : null;
+  const preview = incoming ? mergeBackup(data, incoming, reservedNames) : null;
   return (
     <section className="personal-tools">
       <Button size="small" onClick={() => setOpen(!open)}>
@@ -688,17 +691,18 @@ export function DataManagement({ data, persist }: Props) {
             <>
               <p>
                 {incoming.sessions.length}개 기록 ·{" "}
-                {incoming.sessions.map((s) => s.date.slice(0, 10)).sort()[0] ??
+                {incoming.sessions.map((s) => workoutDay(s.date)).sort()[0] ??
                   "기간 없음"}{" "}
                 ~{" "}
                 {incoming.sessions
-                  .map((s) => s.date.slice(0, 10))
+                  .map((s) => workoutDay(s.date))
                   .sort()
                   .slice(-1)[0] ?? ""}
               </p>
               <p>
-                같은 기록 {preview.duplicates}개 · 충돌 {preview.conflicts}개.
-                충돌은 현재 기기의 기록을 유지해요. 진행 중인 운동도 유지해요.
+                같은 항목 {preview.duplicates}개 · 충돌 {preview.conflicts}개.
+                충돌은 현재 기기의 기록을 유지해요. 같은 이름의 종목은 추가하지
+                않아요. 진행 중인 운동도 유지해요.
               </p>
               <Button
                 disabled={busy}
@@ -822,12 +826,18 @@ export function CustomExerciseCreator({
           <Button
             size="small"
             onClick={() => {
-              const normalized = name.trim().replace(/\s+/g, " ");
+              const normalized = name
+                .normalize("NFKC")
+                .trim()
+                .replace(/\s+/g, " ");
               if (
                 !normalized ||
                 catalog.some(
                   (x) =>
-                    x.name.replace(/\s+/g, "").toLocaleLowerCase() ===
+                    x.name
+                      .normalize("NFKC")
+                      .replace(/\s+/g, "")
+                      .toLocaleLowerCase() ===
                     normalized.replace(/\s+/g, "").toLocaleLowerCase(),
                 )
               ) {

@@ -187,6 +187,10 @@ export function exerciseTrend(sessions: Session[], name: string) {
         : [];
     });
 }
+const normalizedName = (name: string) =>
+  name.normalize("NFKC").replace(/\s+/g, "").toLocaleLowerCase();
+const uniqueIds = (items: { id: string }[]) =>
+  new Set(items.map((x) => x.id)).size === items.length;
 export function validMetadata(data: Saved) {
   try {
     return (
@@ -195,6 +199,7 @@ export function validMetadata(data: Saved) {
           [0, 60, 90, 120].includes(data.settings.restSeconds))) &&
       (data.routines === undefined ||
         (Array.isArray(data.routines) &&
+          uniqueIds(data.routines) &&
           data.routines.every(
             (r) =>
               typeof r.id === "string" &&
@@ -223,6 +228,9 @@ export function validMetadata(data: Saved) {
           ))) &&
       (data.customExercises === undefined ||
         (Array.isArray(data.customExercises) &&
+          uniqueIds(data.customExercises) &&
+          new Set(data.customExercises.map((x) => normalizedName(x.name)))
+            .size === data.customExercises.length &&
           data.customExercises.every(
             (x) =>
               typeof x.id === "string" &&
@@ -252,7 +260,11 @@ export function parseBackup(raw: string): Saved {
   delete data.preImportBackup;
   return data;
 }
-export function mergeBackup(local: Saved, incoming: Saved) {
+export function mergeBackup(
+  local: Saved,
+  incoming: Saved,
+  reservedNames: string[] = [],
+) {
   let duplicates = 0,
     conflicts = 0;
   const sessions = [...local.sessions];
@@ -263,10 +275,34 @@ export function mergeBackup(local: Saved, incoming: Saved) {
       else conflicts++;
     } else sessions.push(structuredClone(session));
   }
-  const mergeItems = <T extends { id: string }>(a: T[] = [], b: T[] = []) => [
-    ...a,
-    ...b.filter((item) => !a.some((old) => old.id === item.id)),
-  ];
+  const mergeItems = <T extends { id: string }>(a: T[] = [], b: T[] = []) => {
+    const merged = [...a];
+    for (const item of b) {
+      const existing = merged.find((old) => old.id === item.id);
+      if (existing) {
+        if (JSON.stringify(existing) === JSON.stringify(item)) duplicates++;
+        else conflicts++;
+      } else merged.push(structuredClone(item));
+    }
+    return merged;
+  };
+  const customExercises = [...(local.customExercises ?? [])];
+  const names = new Set(
+    [...reservedNames, ...customExercises.map((x) => x.name)].map(
+      normalizedName,
+    ),
+  );
+  for (const item of incoming.customExercises ?? []) {
+    const existing = customExercises.find((x) => x.id === item.id);
+    if (existing) {
+      if (JSON.stringify(existing) === JSON.stringify(item)) duplicates++;
+      else conflicts++;
+    } else if (names.has(normalizedName(item.name))) conflicts++;
+    else {
+      customExercises.push(structuredClone(item));
+      names.add(normalizedName(item.name));
+    }
+  }
   return {
     data: {
       ...local,
@@ -274,10 +310,7 @@ export function mergeBackup(local: Saved, incoming: Saved) {
         (a, b) => Date.parse(b.date) - Date.parse(a.date),
       ),
       routines: mergeItems(local.routines, incoming.routines),
-      customExercises: mergeItems(
-        local.customExercises,
-        incoming.customExercises,
-      ),
+      customExercises,
     },
     duplicates,
     conflicts,
@@ -306,7 +339,7 @@ export function sessionsCsv(sessions: Session[]) {
           x.sets
             .filter((row) => row.done)
             .map((row, i) => [
-              s.date,
+              workoutDay(s.date),
               s.name,
               x.name,
               String(i + 1),
@@ -346,4 +379,12 @@ export function comparePeriods(sessions: Session[], days: number, now: number) {
     previous,
     comparable: current.workouts > 0 && previous.workouts > 0,
   };
+}
+export function workoutDay(date: string) {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(date));
 }

@@ -110,3 +110,48 @@ test("same length period comparison never treats absent baseline as progress", (
   assert.equal(result.current.sets, 1);
   assert.equal(result.previous.sets, 1);
 });
+test("import custom names preserve local values across IDs and ignore builtin conflicts", () => {
+  const own = { id: "local", name: "내 운동", muscle: "등", mode: "weight" };
+  const result = m.mergeBackup(
+    { sessions: [], draft: null, customExercises: [own] },
+    {
+      sessions: [],
+      draft: null,
+      customExercises: [
+        { ...own, id: "other", name: " 내  운동 ", muscle: "팔" },
+        { ...own, id: "builtin", name: "벤치 프레스" },
+        { ...own, id: "new", name: "새 운동" },
+      ],
+    },
+    ["벤치 프레스"],
+  );
+  assert.deepEqual(
+    result.data.customExercises.map((x) => x.id),
+    ["local", "new"],
+  );
+  assert.equal(result.conflicts, 2);
+  assert.equal(own.muscle, "등");
+});
+test("metadata rejects duplicate identities and normalized custom names but accepts old format", () => {
+  const custom = { id: "a", name: "내 운동", muscle: "등", mode: "weight" };
+  assert.equal(m.validMetadata({ sessions: [], draft: null }), true);
+  assert.equal(
+    m.validMetadata({
+      customExercises: [custom, { ...custom, id: "b", name: "내  운동" }],
+    }),
+    false,
+  );
+  assert.equal(
+    m.validMetadata({
+      customExercises: [custom, { ...custom, name: "다른 이름" }],
+    }),
+    false,
+  );
+  assert.equal(m.validMetadata(Object.create(null)), true);
+  assert.equal(m.validMetadata(null), false);
+});
+test("Korean workout day preserves local date across UTC midnight", () => {
+  assert.equal(m.workoutDay("2026-10-02T16:00:00Z"), "2026-10-03");
+  assert.equal(m.workoutDay("2026-10-03T00:00:00+09:00"), "2026-10-03");
+  assert.equal(m.workoutDay("2026-10-03T15:00:00Z"), "2026-10-04");
+});

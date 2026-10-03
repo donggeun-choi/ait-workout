@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { graniteEvent } from "@apps-in-toss/web-framework";
 import "./App.css";
 import { BannerAd } from "./BannerAd";
+import { createSaveTracker, type SaveStatus } from "./save-state";
 import {
   completedSetFeedback,
   recordStorage,
@@ -298,6 +299,9 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
 function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
   const [data, setData] = useState<Saved>(initial.data);
   const [storageError, setStorageError] = useState(initial.error);
+  const saveTracker = useRef(createSaveTracker());
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  const lastRequestedRaw = useRef<string | null>(null);
   const [page, setPage] = useState<Page>(() => {
     const tab = location.hash.slice(1);
     return tab === "workout" || tab === "dashboard" || tab === "routines"
@@ -349,18 +353,8 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
   }, []);
   useEffect(() => {
     if (initial.error) return;
-    let active = true;
-    void recordStorage.write(JSON.stringify(data)).then(
-      () => {
-        if (active) setStorageError(false);
-      },
-      () => {
-        if (active) setStorageError(true);
-      },
-    );
-    return () => {
-      active = false;
-    };
+    const raw = JSON.stringify(data);
+    if (lastRequestedRaw.current !== raw) void writeSnapshot(raw);
   }, [data, initial.error]);
   useEffect(() => {
     if (picker || detail || finished) {
@@ -511,6 +505,23 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
       () => {},
     );
   }
+  async function writeSnapshot(raw: string) {
+    lastRequestedRaw.current = raw;
+    const revision = saveTracker.current.begin();
+    setSaveStatus("saving");
+    try {
+      await recordStorage.write(raw);
+      const status = saveTracker.current.resolve(revision);
+      setSaveStatus(status);
+      setStorageError(status === "error");
+      return true;
+    } catch {
+      const status = saveTracker.current.reject(revision);
+      setSaveStatus(status);
+      setStorageError(status === "error");
+      return false;
+    }
+  }
   async function persist(next: Saved) {
     if (initial.error) {
       setError(
@@ -518,25 +529,21 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
       );
       return false;
     }
-    try {
-      await recordStorage.write(JSON.stringify(next));
+    if (await writeSnapshot(JSON.stringify(next))) {
       setData(next);
-      setStorageError(false);
       return true;
-    } catch {
-      setStorageError(true);
-      setError(
-        "기기 저장 공간에 기록을 저장하지 못했어요. 저장 공간을 확인한 뒤 다시 시도해 주세요.",
-      );
+    } else {
       return false;
     }
   }
   function updateDraft(update: (d: Draft) => Draft) {
+    if (saving.current || initial.error) return;
     setData((current) =>
       current.draft ? { ...current, draft: update(current.draft) } : current,
     );
   }
   function start(names: string[], name: string) {
+    if (saving.current || initial.error) return;
     setDemo(false);
     setError("");
     if (!draft)
@@ -771,9 +778,11 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
             <Button
               size="medium"
               variant="weak"
-              onClick={() =>
-                initial.error ? location.reload() : persist(data)
-              }
+              disabled={isSaving || saveStatus === "saving"}
+              onClick={() => {
+                if (initial.error) location.reload();
+                else void writeSnapshot(JSON.stringify(data));
+              }}
             >
               다시 시도
             </Button>
@@ -1125,6 +1134,15 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                 <span /> 운동 진행 중
               </p>
               <h1>{draft.name}</h1>
+              {!initial.error && (
+                <p className="save-status" role="status">
+                  {saveStatus === "saving"
+                    ? "저장 중"
+                    : saveStatus === "error"
+                      ? "저장하지 못했어요"
+                      : "저장됨"}
+                </p>
+              )}
               <div className="session-metrics">
                 <span>
                   <Icon name="time" size={18} />

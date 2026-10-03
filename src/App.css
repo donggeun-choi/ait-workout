@@ -1185,3 +1185,9 @@ textarea {
   height: 12px;
   border-radius: 3px;
 }
+.save-status {
+  color: var(--subtle);
+  font-size: 15px;
+  min-height: 22px;
+  margin: 8px 0;
+}

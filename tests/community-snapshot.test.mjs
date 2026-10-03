@@ -2,12 +2,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import ts from "typescript";
+const modelSource = await readFile(
+  new URL("../src/workout-model.ts", import.meta.url),
+  "utf8",
+);
 const source = (
   await readFile(new URL("../src/community-api.ts", import.meta.url), "utf8")
 )
   .replace(
     /import \{ appLogin \} from "@apps-in-toss\/web-framework";/,
     'const appLogin = async () => ({authorizationCode:"",referrer:"DEFAULT"});',
+  )
+  .replace(
+    /import \{ workoutDay, type Session \} from "\.\/workout-model";/,
+    modelSource,
   )
   .replaceAll("import.meta.env", "({DEV:false})");
 const { outputText } = ts.transpileModule(source, {
@@ -16,7 +24,12 @@ const { outputText } = ts.transpileModule(source, {
     module: ts.ModuleKind.ES2022,
   },
 });
-const { publicSnapshot, graphemeCount, assertComposerAccount } = await import(
+const {
+  publicSnapshot,
+  graphemeCount,
+  assertComposerAccount,
+  assertAccountAction,
+} = await import(
   `data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`
 );
 const session = {
@@ -84,6 +97,24 @@ test("composer allows same-account reauthentication and rejects switching or mis
     code: "ACCOUNT_CHANGED",
   });
   assert.throws(() => assertComposerAccount("original", undefined), {
+    code: "ACCOUNT_CHANGED",
+  });
+});
+
+test("public workout date uses Korean calendar day across UTC midnight", () => {
+  assert.equal(
+    publicSnapshot(
+      { ...session, date: "2026-10-02T16:00:00Z" },
+      { names: false, weights: false, reps: false },
+      "",
+    ).workoutDate,
+    "2026-10-03",
+  );
+});
+test("account actions reject stale withdrawal confirmation after reauthentication as another user", () => {
+  assert.doesNotThrow(() => assertAccountAction(undefined, "first-login"));
+  assert.doesNotThrow(() => assertAccountAction("owner", "owner"));
+  assert.throws(() => assertAccountAction("owner", "different-account"), {
     code: "ACCOUNT_CHANGED",
   });
 });

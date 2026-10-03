@@ -16,10 +16,11 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import type { Session } from "./workout-model";
+import { workoutDay, type Session } from "./workout-model";
 import {
   CommunityError,
   assertComposerAccount,
+  assertAccountAction,
   auth,
   communityRequest,
   graphemeCount,
@@ -408,6 +409,20 @@ export function Community({
   const [notice, setNotice] = useState("");
   const serial = useRef(0);
   const actionLock = useRef(false);
+  const actionOwner = useRef(account?.id);
+  useEffect(() => {
+    if (
+      account?.id &&
+      actionOwner.current &&
+      account.id !== actionOwner.current
+    ) {
+      setSettings(false);
+      setBlocks([]);
+      setWithdraw(false);
+      setMenu(null);
+    }
+    if (account?.id) actionOwner.current = account.id;
+  }, [account?.id]);
   async function load(append = false) {
     const generation = ++serial.current;
     setBusy(true);
@@ -452,10 +467,12 @@ export function Community({
   async function action(fn: () => Promise<void>) {
     if (actionLock.current) return;
     actionLock.current = true;
+    const ownerAtSubmission = actionOwner.current;
     setBusy(true);
     setError("");
     try {
-      await login();
+      const nextAccount = await login();
+      assertAccountAction(ownerAtSubmission, nextAccount.id);
       await fn();
     } catch (e) {
       setError(message(e));
@@ -578,7 +595,7 @@ export function Community({
                 <ListRow.Texts
                   type="2RowTypeA"
                   top={s.name}
-                  bottom={s.date.slice(0, 10)}
+                  bottom={workoutDay(s.date)}
                 />
               }
               right={
@@ -758,6 +775,7 @@ export function Community({
               onClick={() =>
                 void action(async () => {
                   await communityRequest("/auth/session", "DELETE");
+                  actionOwner.current = undefined;
                   auth.clear();
                   setSettings(false);
                 })
@@ -785,6 +803,7 @@ export function Community({
                           ? "커뮤니티에서 탈퇴했어요. 이 기기의 개인 운동 기록은 그대로 남아요."
                           : "커뮤니티 데이터는 삭제했어요. 토스 앱의 연결 관리에서 로그인 연결도 해제해 주세요. 이 기기의 개인 운동 기록은 그대로 남아요.",
                       );
+                      actionOwner.current = undefined;
                       auth.clear();
                       setSettings(false);
                       setWithdraw(false);

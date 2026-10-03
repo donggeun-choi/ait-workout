@@ -1,5 +1,5 @@
 import { appLogin } from "@apps-in-toss/web-framework";
-import type { Session } from "./workout-model";
+import { workoutDay, type Session } from "./workout-model";
 export type Visibility = { names: boolean; weights: boolean; reps: boolean };
 export type PublicExercise = {
   name?: string;
@@ -50,7 +50,7 @@ export function publicSnapshot(
   const completed = session.exercises.filter((e) => e.sets.some((s) => s.done));
   const result: Snapshot = {
     workoutId: session.id,
-    workoutDate: session.date.slice(0, 10),
+    workoutDate: workoutDay(session.date),
     exerciseCount: completed.length,
     completedSetCount: completed.reduce(
       (n, e) => n + e.sets.filter((s) => s.done).length,
@@ -82,6 +82,16 @@ export class CommunityError extends Error {
   ) {
     super(message);
   }
+}
+export function assertAccountAction(
+  ownerId: string | undefined,
+  nextId: string | undefined,
+) {
+  if (!nextId || (ownerId && ownerId !== nextId))
+    throw new CommunityError(
+      "ACCOUNT_CHANGED",
+      "계정이 바뀌었어요. 새 계정에서 하려는 행동을 다시 확인해 주세요.",
+    );
 }
 export function assertComposerAccount(
   ownerId: string | undefined,

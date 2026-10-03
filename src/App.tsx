@@ -428,10 +428,10 @@ function WorkoutApp({
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const animation = mainRef.current?.animate(
       [
-        { opacity: 0.6, transform: "translateY(8px)" },
-        { opacity: 1, transform: "translateY(0)" },
+        { opacity: 0.5, transform: "translateY(6px) scale(0.985)", transformOrigin: "50% 0%" },
+        { opacity: 1, transform: "translateY(0) scale(1)", transformOrigin: "50% 0%" },
       ],
-      { duration: 160, easing: "cubic-bezier(0.2, 0, 0, 1)" },
+      { duration: 220, easing: "cubic-bezier(0.2, 0, 0, 1)" },
     );
     return () => animation?.cancel();
   }, [screenKey]);

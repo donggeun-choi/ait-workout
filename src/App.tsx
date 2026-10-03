@@ -13,6 +13,7 @@ import "./App.css";
 import { BannerAd } from "./BannerAd";
 import { createSaveTracker, type SaveStatus } from "./save-state";
 import type { SetRow, Exercise, Session, Draft, Saved } from "./workout-model";
+import { prepareRepeat } from "./workout-model";
 import {
   completedSetFeedback,
   recordStorage,
@@ -292,6 +293,9 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
       : "home";
   });
   const [selectedRoutine, setSelectedRoutine] = useState<number | null>(null);
+  const [selectedPreviousId, setSelectedPreviousId] = useState<string | null>(
+    null,
+  );
   const [pendingRoutine, setPendingRoutine] = useState<number | null>(null);
   const [demo, setDemo] = useState(false);
   const [examples] = useState(demoSessions);
@@ -315,6 +319,16 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
   const screenKey = `${page}:${page === "workout" && !!data.draft}`;
   const sessions = demo ? examples : data.sessions;
   const draft = data.draft;
+  const recentSessions = [...data.sessions]
+    .filter((session) => countSets(session.exercises) > 0)
+    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
+    .slice(0, 3);
+  const selectedPrevious = data.sessions.find(
+    (session) => session.id === selectedPreviousId,
+  );
+  useEffect(() => {
+    if (selectedPreviousId && !selectedPrevious) setSelectedPreviousId(null);
+  }, [selectedPreviousId, selectedPrevious]);
   const recentExerciseNames = [...data.sessions]
     .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
     .flatMap((session) => session.exercises.map((exercise) => exercise.name));
@@ -954,15 +968,32 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
             <section className="prepared-workout" aria-label="시작할 운동">
               <p className="prepared-label">시작할 운동</p>
               <h2>
-                {selectedRoutine === null
-                  ? "자유 운동"
-                  : routines[selectedRoutine].name}
+                {selectedPrevious
+                  ? selectedPrevious.name
+                  : selectedRoutine === null
+                    ? "자유 운동"
+                    : routines[selectedRoutine].name}
               </h2>
               <p className="prepared-description">
-                {selectedRoutine === null
-                  ? "종목을 직접 추가하며 기록해요"
-                  : `${routines[selectedRoutine].names.length}개 운동 · ${routines[selectedRoutine].names.length * 3}세트`}
+                {selectedPrevious
+                  ? `${selectedPrevious.exercises.length}개 운동 · ${countSets(selectedPrevious.exercises)}세트 · ${dateLabel(selectedPrevious.date)} 기록`
+                  : selectedRoutine === null
+                    ? "종목을 직접 추가하며 기록해요"
+                    : `${routines[selectedRoutine].names.length}개 운동 · ${routines[selectedRoutine].names.length * 3}세트`}
               </p>
+              {selectedPrevious && (
+                <div className="prepared-exercises">
+                  {selectedPrevious.exercises.map((exercise, i) => (
+                    <div key={exercise.id}>
+                      <span className="exercise-order">{i + 1}</span>
+                      <span>
+                        {exercise.name} ·{" "}
+                        {exercise.sets.filter((set) => set.done).length}세트
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {selectedRoutine !== null && (
                 <div className="prepared-exercises">
                   {routines[selectedRoutine].names.map((name, i) => (
@@ -994,11 +1025,91 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                 onClick={() => navigate("routines")}
               />
             </section>
+            {!demo && recentSessions.length > 0 && !initial.error && (
+              <section className="recent-workout-picker">
+                <h2>최근 운동으로 시작</h2>
+                <p>
+                  지난 무게와 횟수를 불러와요. 완료 상태와 메모는 새로 시작해요.
+                </p>
+                <div role="radiogroup" aria-label="최근 운동 선택">
+                  {[null, ...recentSessions].map((session, index, options) => {
+                    const selected = session
+                      ? selectedPreviousId === session.id
+                      : selectedPreviousId === null && selectedRoutine === null;
+                    const select = (next: Session | null) => {
+                      setSelectedPreviousId(next?.id ?? null);
+                      setSelectedRoutine(null);
+                    };
+                    return (
+                      <ListRow
+                        key={session?.id ?? "free"}
+                        as="button"
+                        type="button"
+                        role="radio"
+                        className="routine-option"
+                        aria-checked={selected}
+                        tabIndex={
+                          selected || (index === 0 && selectedRoutine !== null)
+                            ? 0
+                            : -1
+                        }
+                        id={`recent-workout-${index}`}
+                        border="none"
+                        verticalPadding="large"
+                        withTouchEffect
+                        contents={
+                          <ListRow.Texts
+                            type="2RowTypeA"
+                            top={session?.name ?? "자유 운동"}
+                            bottom={
+                              session
+                                ? `${dateLabel(session.date)} · ${countSets(session.exercises)}세트`
+                                : "종목을 직접 추가하며 기록해요"
+                            }
+                            topProps={{ typography: "t6" }}
+                            bottomProps={{ typography: "t6" }}
+                          />
+                        }
+                        right={
+                          <span
+                            className={`routine-check ${selected ? "is-selected" : ""}`}
+                            aria-hidden="true"
+                          >
+                            {selected && <Icon name="check" size={16} />}
+                          </span>
+                        }
+                        onClick={() => select(session)}
+                        onKeyDown={(event) => {
+                          const delta =
+                            event.key === "ArrowDown" ||
+                            event.key === "ArrowRight"
+                              ? 1
+                              : event.key === "ArrowUp" ||
+                                  event.key === "ArrowLeft"
+                                ? -1
+                                : 0;
+                          if (!delta) return;
+                          event.preventDefault();
+                          const next =
+                            (index + delta + options.length) % options.length;
+                          select(options[next]);
+                          document
+                            .getElementById(`recent-workout-${next}`)
+                            ?.focus();
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </section>
+            )}
             {themePicker(true)}
             <p className="workout-help">
-              {selectedRoutine === null
-                ? "운동을 시작하면 종목과 세트를 추가할 수 있어요."
-                : "기본 무게와 횟수는 시작 후 조정할 수 있어요."}
+              {selectedPrevious
+                ? "불러온 무게와 횟수는 시작 후 조정할 수 있어요."
+                : selectedRoutine === null
+                  ? "운동을 시작하면 종목과 세트를 추가할 수 있어요."
+                  : "기본 무게와 횟수는 시작 후 조정할 수 있어요."}
             </p>
           </div>
         )}
@@ -1499,7 +1610,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
       )}
       {(page === "workout" || page === "routines") && (
         <BottomCTA.Single
-          disabled={isSaving}
+          disabled={isSaving || initial.error}
           fixed
           takeSpace={false}
           hasSafeAreaPadding={page === "routines"}
@@ -1515,7 +1626,9 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
             zIndex: 9,
           }}
           onClick={() => {
+            if (saving.current || initial.error) return;
             if (page === "routines") {
+              setSelectedPreviousId(null);
               setSelectedRoutine(pendingRoutine);
               if (draft && !draft.exercises.length && pendingRoutine !== null) {
                 const routine = routines[pendingRoutine];
@@ -1530,7 +1643,15 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
               setPicker(true);
               setMuscle("전체");
             } else if (draft) finish();
-            else {
+            else if (selectedPrevious) {
+              setDemo(false);
+              setError("");
+              const started = Date.now();
+              setData((current) =>
+                prepareRepeat(current, selectedPrevious, started, uid),
+              );
+              navigate("workout");
+            } else {
               const routine =
                 selectedRoutine === null ? null : routines[selectedRoutine];
               start(routine?.names ?? [], routine?.name ?? "자유 운동");
@@ -1547,9 +1668,11 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                 : isSaving
                   ? "기록 저장 중"
                   : "운동 마치고 저장"
-              : selectedRoutine === null
-                ? "자유 운동 시작"
-                : `${routines[selectedRoutine].name} 시작`}
+              : selectedPrevious
+                ? "지난 운동 다시 시작"
+                : selectedRoutine === null
+                  ? "자유 운동 시작"
+                  : `${routines[selectedRoutine].name} 시작`}
         </BottomCTA.Single>
       )}
       <dialog

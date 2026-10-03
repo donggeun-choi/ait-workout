@@ -34,7 +34,14 @@ import {
   usePlatformScreen,
 } from "./platform";
 
-type Page = "home" | "workout" | "dashboard" | "community" | "routines";
+type Page =
+  | "home"
+  | "workout"
+  | "dashboard"
+  | "community"
+  | "routines"
+  | "records"
+  | "manage";
 const uid = () => crypto.randomUUID();
 const catalog = [
   { name: "벤치 프레스", muscle: "가슴", weight: "40" },
@@ -319,7 +326,12 @@ function WorkoutApp({
   const lastRequestedRaw = useRef<string | null>(null);
   const [page, setPage] = useState<Page>(() => {
     const tab = location.hash.slice(1);
-    return tab === "workout" || tab === "dashboard" || tab === "community" || tab === "routines"
+    return tab === "workout" ||
+      tab === "dashboard" ||
+      tab === "community" ||
+      tab === "routines" ||
+      tab === "records" ||
+      tab === "manage"
       ? tab
       : "home";
   });
@@ -465,14 +477,23 @@ function WorkoutApp({
       }
     };
     document.addEventListener("community-overlay-change", changed);
-    return () => document.removeEventListener("community-overlay-change", changed);
+    return () =>
+      document.removeEventListener("community-overlay-change", changed);
   }, []);
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const animation = mainRef.current?.animate(
       [
-        { opacity: 0.5, transform: "translateY(6px) scale(0.985)", transformOrigin: "50% 0%" },
-        { opacity: 1, transform: "translateY(0) scale(1)", transformOrigin: "50% 0%" },
+        {
+          opacity: 0.5,
+          transform: "translateY(6px) scale(0.985)",
+          transformOrigin: "50% 0%",
+        },
+        {
+          opacity: 1,
+          transform: "translateY(0) scale(1)",
+          transformOrigin: "50% 0%",
+        },
       ],
       { duration: 220, easing: "cubic-bezier(0.2, 0, 0, 1)" },
     );
@@ -488,7 +509,10 @@ function WorkoutApp({
     if (!initialHistoryNormalized.current) {
       initialHistoryNormalized.current = true;
       if (history.state?.sheet || history.state?.communityOverlay)
-        history.replaceState({ ...history.state, sheet: false, communityOverlay: false }, "");
+        history.replaceState(
+          { ...history.state, sheet: false, communityOverlay: false },
+          "",
+        );
     }
     if (!history.state?.workoutNavigation) {
       history.replaceState({ workoutNavigation: true, page, depth: 0 }, "");
@@ -515,7 +539,13 @@ function WorkoutApp({
       if (detail.handled) return;
     }
     if (routineEditing || recordEditing) {
-      if (!confirm(routineEditing ? "루틴 변경 내용을 버리고 이동할까요?" : "기록 변경 내용을 버리고 닫을까요?")) {
+      if (
+        !confirm(
+          routineEditing
+            ? "루틴 변경 내용을 버리고 이동할까요?"
+            : "기록 변경 내용을 버리고 닫을까요?",
+        )
+      ) {
         cancelledBackRestore.current = true;
         sheetBackPending.current = false;
         history.forward();
@@ -531,7 +561,12 @@ function WorkoutApp({
     }
     const next = location.hash.slice(1);
     const destination: Page =
-      next === "workout" || next === "dashboard" || next === "community" || next === "routines"
+      next === "workout" ||
+      next === "dashboard" ||
+      next === "community" ||
+      next === "routines" ||
+      next === "records" ||
+      next === "manage"
         ? next
         : "home";
     setPage(destination);
@@ -547,7 +582,10 @@ function WorkoutApp({
   platformBack.current = () => {
     if (communityOverlay) {
       if (history.state?.communityOverlay) history.back();
-      else document.dispatchEvent(new CustomEvent("community-back", { detail: { handled: false } }));
+      else
+        document.dispatchEvent(
+          new CustomEvent("community-back", { detail: { handled: false } }),
+        );
     } else if (dialogRef.current?.open && history.state?.sheet) history.back();
     else if (dialogRef.current?.open) closeDialog();
     else if (routineEditing && !canGoBack) {
@@ -555,13 +593,21 @@ function WorkoutApp({
         setRoutineEditing(false);
         history.back();
       }
-    }
-    else if (page === "routines" && !canGoBack) leaveRoutines();
+    } else if (page === "routines" && !canGoBack) leaveRoutines();
+    else if (["dashboard", "records", "manage"].includes(page) && !canGoBack)
+      navigate("home");
     else history.back();
   };
   const hasSheet = !!(picker || detail || finished || shareSession);
   useEffect(() => {
-    if (!hasSheet && !communityOverlay && !routineEditing && !canGoBack && page !== "routines") return;
+    if (
+      !hasSheet &&
+      !communityOverlay &&
+      !routineEditing &&
+      !canGoBack &&
+      !["routines", "dashboard", "records", "manage"].includes(page)
+    )
+      return;
     return graniteEvent.addEventListener("backEvent", {
       onEvent: () => platformBack.current(),
       onError: () => setError("뒤로 이동하지 못했어요. 다시 시도해 주세요."),
@@ -603,7 +649,12 @@ function WorkoutApp({
   }
   function closeDialog() {
     if (sheetClosing.current || transactionPending.current) return;
-    if (recordEditing && !recordDiscardApproved.current && !confirm("기록 변경 내용을 버리고 닫을까요?")) return;
+    if (
+      recordEditing &&
+      !recordDiscardApproved.current &&
+      !confirm("기록 변경 내용을 버리고 닫을까요?")
+    )
+      return;
     recordDiscardApproved.current = false;
     setRecordEditing(false);
     if (history.state?.sheet) {
@@ -851,6 +902,17 @@ function WorkoutApp({
       )
       .reduce((n, s) => n + volume(s.exercises), 0);
   });
+  const weekSets = Array.from({ length: 4 }, (_, i) => {
+    const start = new Date(monday);
+    start.setDate(start.getDate() - (3 - i) * 7);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    return sessions
+      .filter(
+        (s) => dayKey(s.date) >= dayKey(start) && dayKey(s.date) < dayKey(end),
+      )
+      .reduce((sum, session) => sum + countSets(session.exercises), 0);
+  });
   const filtered = sessions.filter(
     (s) => Date.parse(s.date) >= now - period * 86400000,
   );
@@ -864,26 +926,15 @@ function WorkoutApp({
       )
     : 0;
   function sessionRow(session: Session) {
-    return (
-      <button
-        className="history-row"
-        key={session.id}
+    return <div className="overview-record-row" key={session.id}>
+      <ListRow
+        left={<span className="overview-record-icon"><Icon name="workout" size={20} /></span>}
+        contents={<ListRow.Texts type="2RowTypeA" top={session.name}
+          bottom={`${dateLabel(session.date)} · ${Math.max(1, Math.round(session.seconds / 60))}분 · ${countSets(session.exercises)}세트`} />}
+        right={<Icon name="arrow" size={20} />}
         onClick={() => setDetail(session)}
-      >
-        <span className="tile-icon">
-          <Icon name="workout" />
-        </span>
-        <span className="row-copy">
-          <strong>{session.name}</strong>
-          <span className="meta">
-            {dateLabel(session.date)} ·{" "}
-            {Math.max(1, Math.round(session.seconds / 60))}분 ·{" "}
-            {countSets(session.exercises)}세트
-          </span>
-        </span>
-        <Icon name="arrow" size={20} />
-      </button>
-    );
+      />
+    </div>;
   }
   const stats = (items: Session[]) => (
     <div className="stats-grid">
@@ -980,165 +1031,255 @@ function WorkoutApp({
         )}
         {page === "home" && (
           <>
-            <section className="page-heading">
+            <section className="page-heading home-heading">
               <p className="meta">{dateLabel(today)}</p>
-              <h1>오늘도, 한 세트씩</h1>
-              <p>쌓이는 기록이 나의 변화를 만들어요.</p>
+              <h1>오늘의 운동</h1>
             </section>
-            <section className="week-card">
-              <div
-                className="activity-toggle"
-                role="group"
-                aria-label="운동 활동 조회 단위"
-              >
-                {(["week", "month"] as const).map((value) => (
-                  <Button
-                    key={value}
-                    size="medium"
-                    variant="weak"
-                    color={homePeriod === value ? "primary" : "dark"}
-                    aria-pressed={homePeriod === value}
-                    onClick={() => setHomePeriod(value)}
-                  >
-                    {value === "week" ? "주간" : "월간"}
-                  </Button>
-                ))}
-              </div>
-              <div className="section-heading">
-                <h2>
-                  {homePeriod === "week"
-                    ? "이번 주 운동"
-                    : `${calendarMonth}월 운동`}
-                </h2>
-                <Badge size="medium" color="blue" variant="weak">
-                  {homePeriod === "week" ? activeDays : monthDays}일 완료
-                </Badge>
-              </div>
-              {homePeriod === "week" ? (
-                <div className="week-strip">
-                  {days.map((d, i) => {
-                    const done = sessions.some(
-                      (s) => dayKey(s.date) === dayKey(d),
-                    );
-                    return (
-                      <div
-                        key={i}
-                        className={`day ${dayKey(d) === dayKey(today) ? "today" : ""}`}
-                      >
-                        <span>
-                          {["월", "화", "수", "목", "금", "토", "일"][i]}
-                        </span>
-                        <div
-                          className={done ? "day-bubble done" : "day-bubble"}
-                        >
-                          {done ? <Icon name="check" size={19} /> : d.getDate()}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div
-                  className="month-activity"
-                  aria-label={`${calendarYear}년 ${calendarMonth}월 일별 완료 세트`}
-                >
-                  <div className="month-grid month-weekdays" aria-hidden="true">
-                    {["월", "화", "수", "목", "금", "토", "일"].map((day) => (
-                      <span key={day}>{day}</span>
-                    ))}
-                  </div>
-                  <div className="month-grid">
-                    {monthCells.map((cell, index) =>
-                      cell ? (
-                        <div
-                          key={cell.key}
-                          className={`grass-cell grass-level-${cell.level}${cell.key === dayKey(today) ? " grass-today" : ""}`}
-                          title={`${cell.date}일 · ${cell.sets}세트`}
-                          aria-label={`${cell.date}일, 완료 ${cell.sets}세트`}
-                        >
-                          <span>{cell.date}</span>
-                        </div>
-                      ) : (
-                        <div key={`blank-${index}`} aria-hidden="true" />
-                      ),
-                    )}
-                  </div>
-                  <div className="grass-legend">
-                    <span>완료 세트 적음</span>
-                    {[0, 1, 2, 3, 4].map((level) => (
-                      <span
-                        key={level}
-                        className={`grass-swatch grass-level-${level}`}
-                        aria-hidden="true"
-                      />
-                    ))}
-                    <span>많음</span>
-                  </div>
-                </div>
-              )}
-              <div className="week-footer">
-                <Icon name="time" size={17} />
-                <span>
-                  {homePeriod === "week" ? "이번 주" : "이번 달"}{" "}
-                  {Math.ceil(
-                    (homePeriod === "week"
-                      ? weekSessions
-                      : monthSessions
-                    ).reduce((n, s) => n + s.seconds, 0) / 60,
-                  )}
-                  분을 기록했어요
-                </span>
-              </div>
-            </section>
-            <section className="start-card">
-              <div>
-                <span className="small-label">나를 위한 시간</span>
-                <h2>
-                  {draft ? "이어서 기록할까요?" : "오늘의 운동을 시작해요"}
-                </h2>
+            <section className="home-workout">
+              <span className="home-workout-symbol">
+                <Icon name="workout" size={24} />
+              </span>
+              <div className="home-workout-copy">
+                <h2>{draft ? draft.name : "한 세트씩, 나의 페이스로"}</h2>
                 <p>
                   {draft
-                    ? `${draft.name} · ${countSets(draft.exercises)}세트 완료`
-                    : "루틴을 고르고, 무게와 횟수만 남겨요."}
+                    ? `${draft.exercises.length}개 종목 · ${countSets(draft.exercises)}세트 완료`
+                    : "지난 운동이나 루틴으로 준비해요."}
                 </p>
-              </div>
-              <div className="workout-art">
-                <Icon name="workout" size={24} />
-                <span className="art-dot" />
               </div>
               <Button
                 display="block"
-                onClick={() =>
-                  draft ? navigate("workout") : navigate("workout")
-                }
+                disabled={!!initial.error}
+                onClick={() => navigate("workout")}
               >
-                {draft ? "진행 중인 운동 이어하기" : "운동 시작하기"}
+                {draft ? "운동 이어하기" : "운동 준비하기"}
               </Button>
             </section>
-            <section>
-              <div className="section-heading">
-                <h2>최근 운동 기록</h2>
-                <span className="meta">{sessions.length}개의 기록</span>
-              </div>
-              {sessions.length ? (
-                sessions.slice(0, 3).map(sessionRow)
-              ) : (
-                <div className="empty-state">
-                  <span className="tile-icon">
-                    <Icon name="workout" size={24} />
-                  </span>
-                  <h3>첫 기록을 기다리고 있어요</h3>
-                  <p>운동을 마치면 이곳에 차곡차곡 쌓여요.</p>
-                </div>
-              )}
-            </section>
-            <section className="tip">
-              <Icon name="leaf" size={24} />
-              <div>
-                <strong>지난 기록이 다음 운동의 기준</strong>
-                <p>무게보다 꾸준함에 집중해 보세요.</p>
-              </div>
-            </section>
+            {sessions.length > 0 && (
+              <>
+                <section className="week-card">
+                  <div className="section-heading activity-heading">
+                    <h2>
+                      {homePeriod === "week"
+                        ? "이번 주 운동"
+                        : `${calendarMonth}월 운동`}
+                    </h2>
+                    <div
+                      className="activity-toggle"
+                      role="group"
+                      aria-label="운동 활동 조회 단위"
+                    >
+                      {(["week", "month"] as const).map((value) => (
+                        <Button
+                          key={value}
+                          size="medium"
+                          variant="weak"
+                          color={homePeriod === value ? "primary" : "dark"}
+                          aria-pressed={homePeriod === value}
+                          onClick={() => setHomePeriod(value)}
+                        >
+                          {value === "week" ? "주간" : "월간"}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  {homePeriod === "week" ? (
+                    <div className="week-strip">
+                      {days.map((d, i) => {
+                        const done = sessions.some(
+                          (s) => dayKey(s.date) === dayKey(d),
+                        );
+                        return (
+                          <div
+                            key={i}
+                            className={`day ${dayKey(d) === dayKey(today) ? "today" : ""}`}
+                          >
+                            <span>
+                              {["월", "화", "수", "목", "금", "토", "일"][i]}
+                            </span>
+                            <div
+                              className={
+                                done ? "day-bubble done" : "day-bubble"
+                              }
+                            >
+                              {done ? (
+                                <Icon name="check" size={19} />
+                              ) : (
+                                d.getDate()
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div
+                      className="month-activity"
+                      aria-label={`${calendarYear}년 ${calendarMonth}월 일별 완료 세트`}
+                    >
+                      <div
+                        className="month-grid month-weekdays"
+                        aria-hidden="true"
+                      >
+                        {["월", "화", "수", "목", "금", "토", "일"].map(
+                          (day) => (
+                            <span key={day}>{day}</span>
+                          ),
+                        )}
+                      </div>
+                      <div className="month-grid">
+                        {monthCells.map((cell, index) =>
+                          cell ? (
+                            <div
+                              key={cell.key}
+                              className={`grass-cell grass-level-${cell.level}${cell.key === dayKey(today) ? " grass-today" : ""}`}
+                              title={`${cell.date}일 · ${cell.sets}세트`}
+                              aria-label={`${cell.date}일, 완료 ${cell.sets}세트`}
+                            >
+                              <span>{cell.date}</span>
+                            </div>
+                          ) : (
+                            <div key={`blank-${index}`} aria-hidden="true" />
+                          ),
+                        )}
+                      </div>
+                      <div className="grass-legend">
+                        <span>완료 세트 적음</span>
+                        {[0, 1, 2, 3, 4].map((level) => (
+                          <span
+                            key={level}
+                            className={`grass-swatch grass-level-${level}`}
+                            aria-hidden="true"
+                          />
+                        ))}
+                        <span>많음</span>
+                      </div>
+                    </div>
+                  )}
+                  <div className="home-metrics">
+                    <div>
+                      <span>운동한 날</span>
+                      <strong>
+                        {homePeriod === "week" ? activeDays : monthDays}
+                        <small>일</small>
+                      </strong>
+                    </div>
+                    <div>
+                      <span>완료 세트</span>
+                      <strong>
+                        {(homePeriod === "week"
+                          ? weekSessions
+                          : monthSessions
+                        ).reduce(
+                          (n, session) => n + countSets(session.exercises),
+                          0,
+                        )}
+                        <small>세트</small>
+                      </strong>
+                    </div>
+                    <div>
+                      <span>운동 시간</span>
+                      <strong>
+                        {Math.ceil(
+                          (homePeriod === "week"
+                            ? weekSessions
+                            : monthSessions
+                          ).reduce((n, session) => n + session.seconds, 0) / 60,
+                        )}
+                        <small>분</small>
+                      </strong>
+                    </div>
+                  </div>
+                </section>
+                <section>
+                  <div className="section-heading">
+                    <h2>최근 운동 기록</h2>
+                    <Button
+                      size="medium"
+                      variant="weak"
+                      color="dark"
+                      onClick={() => navigate("records")}
+                    >
+                      전체 보기
+                    </Button>
+                  </div>
+                  {sessions.length ? (
+                    sessions.slice(0, 3).map(sessionRow)
+                  ) : (
+                    <div className="empty-state">
+                      <span className="tile-icon">
+                        <Icon name="workout" size={24} />
+                      </span>
+                      <h3>첫 기록을 기다리고 있어요</h3>
+                      <p>운동을 마치면 이곳에 차곡차곡 쌓여요.</p>
+                    </div>
+                  )}
+                </section>
+                <section className="home-trend">
+                  <div className="section-heading">
+                    <div>
+                      <h2>나의 운동 변화</h2>
+                      <p className="meta">최근 4주 · 완료 세트</p>
+                    </div>
+                    <Button
+                      size="medium"
+                      variant="weak"
+                      color="dark"
+                      onClick={() => navigate("dashboard")}
+                    >
+                      자세히 보기
+                    </Button>
+                  </div>
+                  <div
+                    className="home-bars"
+                    role="img"
+                    aria-label={`최근 4주 완료 세트: ${weekSets.map((v, i) => `${i === 3 ? "이번 주" : `${3 - i}주 전`} ${v}세트`).join(", ")}`}
+                  >
+                    {weekSets.map((v, i) => (
+                      <div className="home-bar-column" key={i}>
+                        <span className="meta">{v}</span>
+                        <div className="home-bar-track">
+                          <div
+                            className={
+                              i === 3 ? "home-bar current" : "home-bar"
+                            }
+                            style={{
+                              height: `${v ? Math.max(4, (v / Math.max(1, ...weekSets)) * 100) : 0}%`,
+                            }}
+                          />
+                        </div>
+                        <span className="meta">
+                          {i === 3 ? "이번 주" : `${3 - i}주 전`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="home-trend-note">
+                    무게와 횟수의 변화는 운동 분석에서 확인해요.
+                  </p>
+                </section>
+              </>
+            )}
+            {!sessions.length && (
+              <section className="home-empty">
+                <h2>첫 운동부터 차곡차곡</h2>
+                <p>운동을 마치면 활동 현황과 최근 기록이 여기에 쌓여요.</p>
+              </section>
+            )}
+            {!demo && (
+              <section className="home-management">
+                <ListRow
+                  contents={
+                    <ListRow.Texts
+                      type="1RowTypeA"
+                      top="기록 백업 및 가져오기"
+                    />
+                  }
+                  right={<Icon name="arrow" size={20} />}
+                  onClick={() => navigate("manage")}
+                />
+              </section>
+            )}
           </>
         )}
         {page === "workout" && !draft && (
@@ -1479,7 +1620,9 @@ function WorkoutApp({
                     draft: current.draft
                       ? {
                           ...current.draft,
-                          exercises: current.draft.exercises.map(exercise => ({ ...exercise, restSeconds })),
+                          exercises: current.draft.exercises.map(
+                            (exercise) => ({ ...exercise, restSeconds }),
+                          ),
                           restUntil:
                             restSeconds === 0 ? null : current.draft.restUntil,
                         }
@@ -1792,8 +1935,8 @@ function WorkoutApp({
           <>
             <section className="page-heading">
               <p className="meta">기록으로 보는 나의 변화</p>
-              <h1>꾸준함이 쌓이고 있어요</h1>
-              <p>작은 기록에서 큰 변화를 발견해요.</p>
+              <h1>운동 분석</h1>
+              <p>완료한 운동으로 나의 변화를 확인해요.</p>
             </section>
             <div className="period-selector" aria-label="조회 기간">
               {[7, 28, 90].map((p) => (
@@ -1903,11 +2046,50 @@ function WorkoutApp({
             </p>
           </>
         )}
-        {page === "dashboard" && !demo && (
-          <ExerciseTrends sessions={data.sessions} />
+        {page === "dashboard" && (
+          <ExerciseTrends sessions={sessions} period={period} />
         )}
-        {page === "home" && !demo && (
-          <DataManagement data={data} persist={persist} reservedNames={catalog.map(x => x.name)} />
+        {page === "manage" && (
+          <section className="page-heading">
+            <h1>기록 관리</h1>
+            <p>이 기기의 운동 기록을 백업하고 가져와요.</p>
+          </section>
+        )}
+        {page === "manage" && !demo && (
+          <DataManagement
+            data={data}
+            persist={persist}
+            reservedNames={catalog.map((x) => x.name)}
+          />
+        )}
+        {page === "records" && (
+          <>
+            <section className="page-heading">
+              <h1>전체 운동 기록</h1>
+              <p>{sessions.length}개의 운동을 기록했어요.</p>
+            </section>
+            <section>
+              {sessions.length ? (
+                sessions.map(sessionRow)
+              ) : (
+                <p>아직 저장한 운동이 없어요.</p>
+              )}
+            </section>
+          </>
+        )}
+        {["dashboard", "records", "manage"].includes(page) && (
+          <div className="overview-return">
+            <Button
+              variant="weak"
+              display="block"
+              onClick={() => {
+                if (canGoBack) history.back();
+                else navigate("home");
+              }}
+            >
+              돌아가기
+            </Button>
+          </div>
         )}
         {page === "community" && (
           <Community
@@ -1923,15 +2105,15 @@ function WorkoutApp({
           data.sessions.length > 0 &&
           !draft &&
           !demo &&
-          !hasSheet && !communityOverlay && <BannerAd />}
+          !hasSheet &&
+          !communityOverlay && <BannerAd />}
       </main>
-      {page !== "routines" && (
+      {!["routines", "dashboard", "records", "manage"].includes(page) && (
         <nav className="bottom-nav" aria-label="주요 메뉴">
           {(
             [
               { id: "home", label: "홈" },
               { id: "workout", label: "운동" },
-              { id: "dashboard", label: "대시보드" },
               { id: "community", label: "커뮤니티" },
             ] as const
           ).map((tab) => (
@@ -2212,7 +2394,11 @@ function WorkoutApp({
                     />
                   )}
                   {!demo && !recordEditing && (
-                    <Button variant="weak" display="block" onClick={() => setShareSession(s)}>
+                    <Button
+                      variant="weak"
+                      display="block"
+                      onClick={() => setShareSession(s)}
+                    >
                       운동 인증하기
                     </Button>
                   )}
@@ -2240,9 +2426,13 @@ function WorkoutApp({
             setDetail(null);
             setFinished(null);
             setCommunityTab("mine");
-            setCommunityRefresh(value => value + 1);
+            setCommunityRefresh((value) => value + 1);
             history.replaceState(
-              { workoutNavigation: true, page: "community", depth: (history.state?.depth ?? 0) + 1 },
+              {
+                workoutNavigation: true,
+                page: "community",
+                depth: (history.state?.depth ?? 0) + 1,
+              },
               "",
               "#community",
             );

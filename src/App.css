@@ -1299,3 +1299,202 @@ textarea {
   min-height: 44px;
   margin-right: 4px;
 }
+/* Overview: compact activity blocks, clear actions and a quiet chart. */
+.bottom-nav {
+  grid-template-columns: repeat(3, 1fr);
+}
+.app-shell[data-page="dashboard"],
+.app-shell[data-page="records"],
+.app-shell[data-page="manage"] {
+  --dock-height: 0px;
+}
+.app-shell[data-page="dashboard"] main,
+.app-shell[data-page="records"] main,
+.app-shell[data-page="manage"] main {
+  padding-bottom: max(34px, var(--safe-bottom));
+}
+.home-heading {
+  padding: 20px 0 0;
+}
+.home-heading h1 {
+  margin-bottom: 0;
+}
+main > .home-workout {
+  margin-top: 16px;
+}
+.home-workout {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 20px;
+  padding: 20px;
+  background: var(--canvas);
+  border-radius: 20px;
+}
+.home-workout-symbol {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--brand-dark);
+}
+.home-workout-copy h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+.home-workout-copy p {
+  margin-top: 4px;
+}
+.home-workout > button {
+  grid-column: 1 / -1;
+}
+.app-shell[data-page="home"] .week-card {
+  border: none;
+  padding: 0;
+  border-radius: 0;
+}
+.app-shell[data-page="home"] .week-card .section-heading {
+  margin-bottom: 16px;
+}
+.home-metrics {
+  margin-top: 20px;
+  padding: 16px 12px;
+  border-radius: 16px;
+  background: var(--canvas);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.home-metrics > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.home-metrics > div + div {
+  border-left: 1px solid var(--line);
+}
+.home-metrics span {
+  color: var(--subtle);
+  font-size: 13px;
+}
+.home-metrics strong {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.home-metrics small {
+  font-size: 15px;
+  margin-left: 3px;
+  font-weight: 400;
+}
+.app-shell[data-page="home"] .history-row,
+.app-shell[data-page="records"] .history-row {
+  background: transparent;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  margin: 0;
+  padding: 16px 0;
+  min-height: 76px;
+}
+.app-shell[data-page="home"] .history-row .tile-icon,
+.app-shell[data-page="records"] .history-row .tile-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--canvas);
+}
+.app-shell[data-page="home"] .section-heading {
+  margin-bottom: 8px;
+}
+.home-trend {
+  padding: 20px;
+  background: var(--canvas);
+  border-radius: 20px;
+}
+.home-trend .section-heading {
+  align-items: flex-start;
+}
+.home-trend .section-heading h2 {
+  margin-bottom: 4px;
+}
+.home-bars {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+.home-bar-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.home-bar-track {
+  height: 88px;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  border-bottom: 1px solid #d1d6db;
+}
+.home-bar {
+  width: 100%;
+  background: #b8d6ff;
+  border-radius: 6px 6px 0 0;
+}
+.home-bar.current {
+  background: var(--brand);
+}
+.home-trend-note {
+  margin-top: 16px;
+  font-size: 15px;
+}
+.home-empty {
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.home-empty h2 {
+  margin-bottom: 8px;
+}
+.home-management {
+  border-top: 1px solid var(--line);
+}
+.overview-return {
+  margin-top: 28px;
+}
+.app-shell[data-page="dashboard"] .summary-card,
+.app-shell[data-page="dashboard"] .chart-card {
+  border: none;
+  background: var(--canvas);
+  border-radius: 20px;
+}
+@media (max-width: 360px) {
+  .home-workout,
+  .home-trend {
+    padding: 16px;
+  }
+  .home-metrics {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .home-bars {
+    gap: 12px;
+  }
+}
+.app-shell[data-page="home"] .activity-toggle {
+  margin: 0;
+  gap: 4px;
+}
+.app-shell[data-page="home"] .activity-toggle > button {
+  min-width: 56px;
+}
+.app-shell[data-page="home"] .activity-heading {
+  margin-bottom: 16px;
+}
+.overview-record-row { border-bottom: 1px solid var(--line); }
+.overview-record-icon {
+  display: grid; place-items: center;
+  width: 40px; height: 40px;
+  background: var(--canvas); border-radius: 12px; color: var(--brand-dark);
+}

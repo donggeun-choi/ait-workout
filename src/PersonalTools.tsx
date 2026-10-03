@@ -480,8 +480,13 @@ export function PersonalRoutines({
     </section>
   );
 }
-export function ExerciseTrends({ sessions }: { sessions: Session[] }) {
-  const [period, setPeriod] = useState(28);
+export function ExerciseTrends({
+  sessions,
+  period,
+}: {
+  sessions: Session[];
+  period: number;
+}) {
   const comparison = comparePeriods(sessions, period, Date.now());
   const names = [
     ...new Set(sessions.flatMap((s) => s.exercises.map((x) => x.name))),
@@ -492,19 +497,6 @@ export function ExerciseTrends({ sessions }: { sessions: Session[] }) {
   return (
     <section className="personal-tools">
       <h2>기간 비교</h2>
-      <label>
-        비교 기간
-        <select
-          value={period}
-          onChange={(e) => setPeriod(Number(e.target.value))}
-        >
-          {[7, 28, 84].map((n) => (
-            <option key={n} value={n}>
-              {n}일
-            </option>
-          ))}
-        </select>
-      </label>
       {comparison.comparable ? (
         <p>
           최근 {period}일 {comparison.current.workouts}회 ·{" "}
@@ -565,7 +557,7 @@ export function DataManagement({
   persist,
   reservedNames = [],
 }: Props & { reservedNames?: string[] }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [raw, setRaw] = useState("");
   const [incoming, setIncoming] = useState<Saved | null>(null);
   const [message, setMessage] = useState("");

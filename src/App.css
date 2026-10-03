@@ -1492,9 +1492,169 @@ main > .home-workout {
 .app-shell[data-page="home"] .activity-heading {
   margin-bottom: 16px;
 }
-.overview-record-row { border-bottom: 1px solid var(--line); }
+.overview-record-row {
+  border-bottom: 1px solid var(--line);
+}
 .overview-record-icon {
-  display: grid; place-items: center;
-  width: 40px; height: 40px;
-  background: var(--canvas); border-radius: 12px; color: var(--brand-dark);
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  background: var(--canvas);
+  border-radius: 12px;
+  color: var(--brand-dark);
+}
+/* Workout redesign: inputs lead, management stays secondary. */
+.workout-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.workout-title-row h1 {
+  min-width: 0;
+  flex: 1;
+}
+.workout-title-row .save-status {
+  flex-shrink: 0;
+}
+.session-heading {
+  padding: 20px 0 0;
+}
+.session-metrics {
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+main > .rest-panel {
+  margin-top: 16px;
+}
+.rest-panel {
+  padding: 12px;
+  background: var(--canvas);
+  border-radius: 16px;
+  min-height: 116px;
+}
+.rest-panel .rest-setting {
+  margin: 0;
+  height: 44px;
+  justify-content: space-between;
+}
+.rest-panel .rest-setting select {
+  min-height: 44px;
+  font-size: 15px;
+}
+.rest-panel .rest-card {
+  background: transparent;
+  padding: 8px 0 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  min-height: 52px;
+}
+.rest-panel .rest-card > div {
+  font-size: 13px;
+  min-width: 0;
+  gap: 4px;
+}
+.rest-panel .rest-card svg {
+  display: none;
+}
+.rest-panel .rest-card strong {
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.rest-panel .plain-button {
+  font-size: 13px;
+  padding: 0 8px;
+}
+.rest-panel .plain-button:disabled {
+  color: var(--subtle);
+  border-color: var(--line);
+  opacity: 0.65;
+}
+.app-shell[data-page="workout"] .exercise-card {
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 12px 0 20px;
+  margin: 20px 0;
+}
+.exercise-card > .section-heading {
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  margin-bottom: 16px;
+}
+.exercise-card > .section-heading > div {
+  min-width: 0;
+}
+.exercise-card > .section-heading > button {
+  flex-shrink: 0;
+}
+.exercise-tools {
+  background: var(--canvas);
+  border-radius: 12px;
+  padding: 12px;
+}
+.exercise-tools .meta {
+  margin-bottom: 8px;
+}
+.exercise-delete {
+  border: 1px solid var(--line);
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #d33535;
+  background: var(--surface);
+  font-size: 15px;
+}
+.set-grid:not(.set-labels) {
+  border-radius: 12px;
+  padding: 8px 4px;
+  margin-bottom: 4px;
+}
+.set-next {
+  background: var(--brand-pale);
+}
+.set-previous {
+  grid-column: 2 / -1;
+  min-height: 20px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--subtle);
+}
+.set-done .set-previous {
+  color: var(--subtle);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 360px) {
+  .exercise-card > .section-heading > button {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .rest-panel {
+    padding: 10px;
+  }
+}
+.exercise-card > .section-heading > button {
+  min-height: 44px;
+}
+.routine-entry {
+  margin: 20px 24px 0;
+  border-top: 1px solid var(--line);
+}
+.routine-entry .routine-change-row {
+  border-top: 0;
 }

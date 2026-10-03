@@ -390,18 +390,34 @@ export function workoutDay(date: string) {
 }
 
 export function previousCompletedSet(
-  sessions: Session[], name: string, index: number,
+  sessions: Session[],
+  name: string,
+  index: number,
 ): Readonly<SetRow> | null {
   if (!Number.isInteger(index) || index < 0) return null;
-  return previousExercise(sessions, name)?.exercise.sets.filter(row => row.done)[index] ?? null;
+  return (
+    previousExercise(sessions, name)?.exercise.sets.filter((row) => row.done)[
+      index
+    ] ?? null
+  );
 }
 
 export function firstIncompleteSet(
   exercises: Exercise[],
 ): { exerciseId: string; setId: string } | null {
   for (const exercise of exercises) {
-    const set = exercise.sets.find(row => !row.done);
+    const set = exercise.sets.find((row) => !row.done);
     if (set) return { exerciseId: exercise.id, setId: set.id };
   }
   return null;
+}
+
+export function previousSetLabel(
+  row: Readonly<Pick<SetRow, "weight" | "reps">> | null,
+  bodyweight: boolean,
+): string {
+  if (!row) return "지난 기록 없음";
+  return bodyweight && Number(row.weight) === 0
+    ? `지난 ${row.reps}회`
+    : `지난 ${row.weight}kg × ${row.reps}회`;
 }

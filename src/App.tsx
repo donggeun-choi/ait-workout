@@ -24,6 +24,9 @@ import {
 import {
   fillPrevious,
   previousExercise,
+  previousCompletedSet,
+  previousSetLabel,
+  firstIncompleteSet,
   validMetadata,
   validSession,
   prepareRepeat,
@@ -367,6 +370,7 @@ function WorkoutApp({
   const initialHistoryNormalized = useRef(false);
   const [error, setError] = useState("");
   const [period, setPeriod] = useState(28);
+  const [managedExercise, setManagedExercise] = useState<string | null>(null);
   const [homePeriod, setHomePeriod] = useState<"week" | "month">("week");
   const dialogRef = useRef<HTMLDialogElement>(null);
   const mainRef = useRef<HTMLElement>(null);
@@ -916,6 +920,7 @@ function WorkoutApp({
   const filtered = sessions.filter(
     (s) => Date.parse(s.date) >= now - period * 86400000,
   );
+  const nextSet = firstIncompleteSet(draft?.exercises ?? []);
   const elapsed = draft
     ? Math.max(0, Math.floor((now - draft.started) / 1000))
     : 0;
@@ -926,15 +931,26 @@ function WorkoutApp({
       )
     : 0;
   function sessionRow(session: Session) {
-    return <div className="overview-record-row" key={session.id}>
-      <ListRow
-        left={<span className="overview-record-icon"><Icon name="workout" size={20} /></span>}
-        contents={<ListRow.Texts type="2RowTypeA" top={session.name}
-          bottom={`${dateLabel(session.date)} · ${Math.max(1, Math.round(session.seconds / 60))}분 · ${countSets(session.exercises)}세트`} />}
-        right={<Icon name="arrow" size={20} />}
-        onClick={() => setDetail(session)}
-      />
-    </div>;
+    return (
+      <div className="overview-record-row" key={session.id}>
+        <ListRow
+          left={
+            <span className="overview-record-icon">
+              <Icon name="workout" size={20} />
+            </span>
+          }
+          contents={
+            <ListRow.Texts
+              type="2RowTypeA"
+              top={session.name}
+              bottom={`${dateLabel(session.date)} · ${Math.max(1, Math.round(session.seconds / 60))}분 · ${countSets(session.exercises)}세트`}
+            />
+          }
+          right={<Icon name="arrow" size={20} />}
+          onClick={() => setDetail(session)}
+        />
+      </div>
+    );
   }
   const stats = (items: Session[]) => (
     <div className="stats-grid">
@@ -1349,26 +1365,6 @@ function WorkoutApp({
                   ))}
                 </div>
               )}
-              <ListRow
-                as="button"
-                type="button"
-                className="routine-change-row"
-                border="none"
-                arrowType="right"
-                withTouchEffect
-                contents={
-                  <ListRow.Texts
-                    type="1RowTypeA"
-                    top={
-                      selectedRoutine === null
-                        ? "추천 루틴에서 선택"
-                        : "루틴 변경"
-                    }
-                    topProps={{ typography: "t6" }}
-                  />
-                }
-                onClick={() => navigate("routines")}
-              />
             </section>
             {!demo && recentSessions.length > 0 && !initial.error && (
               <section className="recent-workout-picker">
@@ -1451,7 +1447,29 @@ function WorkoutApp({
                 </div>
               </section>
             )}
-            {themePicker(true)}
+            <section className="routine-entry">
+              <ListRow
+                as="button"
+                type="button"
+                className="routine-change-row"
+                border="none"
+                arrowType="right"
+                withTouchEffect
+                contents={
+                  <ListRow.Texts
+                    type="1RowTypeA"
+                    top={
+                      selectedRoutine === null
+                        ? "추천 루틴에서 선택"
+                        : "루틴 변경"
+                    }
+                    topProps={{ typography: "t6" }}
+                  />
+                }
+                onClick={() => navigate("routines")}
+              />
+            </section>
+            {themePicker(false)}
             <p className="workout-help">
               {selectedPrevious
                 ? "불러온 무게와 횟수는 시작 후 조정할 수 있어요."
@@ -1585,68 +1603,79 @@ function WorkoutApp({
         {page === "workout" && draft && (
           <>
             <section className="page-heading session-heading">
-              <p className="live-label">
-                <span /> 운동 진행 중
-              </p>
-              <h1>{draft.name}</h1>
-              {!initial.error && (
-                <p className="save-status" role="status">
-                  {saveStatus === "saving"
-                    ? "저장 중"
-                    : saveStatus === "error"
-                      ? "저장하지 못했어요"
-                      : "저장됨"}
-                </p>
-              )}
+              <div className="workout-title-row">
+                <h1>{draft.name}</h1>
+                {!initial.error && (
+                  <p className="save-status" role="status">
+                    {saveStatus === "saving"
+                      ? "저장 중"
+                      : saveStatus === "error"
+                        ? "저장하지 못했어요"
+                        : "저장됨"}
+                  </p>
+                )}
+              </div>
               <div className="session-metrics">
                 <span>
                   <Icon name="time" size={18} />
                   {clock(elapsed)}
                 </span>
-                <span>{countSets(draft.exercises)}세트</span>
-                <span>{number(volume(draft.exercises))}kg</span>
+                <span>
+                  {countSets(draft.exercises)}/
+                  {draft.exercises.reduce((n, x) => n + x.sets.length, 0)}세트
+                  완료
+                </span>
               </div>
             </section>
-            <label className="rest-setting">
-              기본 휴식{" "}
-              <select
-                aria-label="기본 휴식"
-                value={data.settings?.restSeconds ?? 90}
-                onChange={(e) => {
-                  const restSeconds = Number(e.target.value);
-                  setData((current) => ({
-                    ...current,
-                    settings: { restSeconds },
-                    draft: current.draft
-                      ? {
-                          ...current.draft,
-                          exercises: current.draft.exercises.map(
-                            (exercise) => ({ ...exercise, restSeconds }),
-                          ),
-                          restUntil:
-                            restSeconds === 0 ? null : current.draft.restUntil,
-                        }
-                      : null,
-                  }));
-                }}
-              >
-                {[0, 60, 90, 120].map((n) => (
-                  <option key={n} value={n}>
-                    {n ? `${n}초` : "끄기"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {draft.restUntil !== null && (
-              <div className="rest-card" role="status">
+            <section className="rest-panel" aria-label="휴식 타이머">
+              <label className="rest-setting">
+                기본 휴식{" "}
+                <select
+                  aria-label="기본 휴식"
+                  value={data.settings?.restSeconds ?? 90}
+                  onChange={(e) => {
+                    const restSeconds = Number(e.target.value);
+                    setData((current) => ({
+                      ...current,
+                      settings: { restSeconds },
+                      draft: current.draft
+                        ? {
+                            ...current.draft,
+                            exercises: current.draft.exercises.map(
+                              (exercise) => ({ ...exercise, restSeconds }),
+                            ),
+                            restUntil:
+                              restSeconds === 0
+                                ? null
+                                : current.draft.restUntil,
+                          }
+                        : null,
+                    }));
+                  }}
+                >
+                  {[0, 60, 90, 120].map((n) => (
+                    <option key={n} value={n}>
+                      {n ? `${n}초` : "끄기"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="rest-card">
                 <div>
                   <Icon name="time" size={22} />
                   <strong>
-                    {rest > 0 ? `휴식 ${clock(rest)}` : "휴식이 끝났어요"}
+                    {draft.restUntil === null
+                      ? data.settings?.restSeconds === 0
+                        ? "자동 휴식 꺼짐"
+                        : "세트 완료 후 휴식 시작"
+                      : rest > 0
+                        ? `휴식 ${clock(rest)}`
+                        : "휴식이 끝났어요"}
                   </strong>
                 </div>
                 <button
                   className="plain-button"
+                  disabled={draft.restUntil === null}
                   onClick={() =>
                     updateDraft((d) => ({
                       ...d,
@@ -1659,6 +1688,7 @@ function WorkoutApp({
                 </button>
                 <button
                   className="plain-button"
+                  disabled={draft.restUntil === null}
                   onClick={() =>
                     updateDraft((d) => ({ ...d, restUntil: null }))
                   }
@@ -1666,7 +1696,7 @@ function WorkoutApp({
                   {rest > 0 ? "건너뛰기" : "닫기"}
                 </button>
               </div>
-            )}
+            </section>
             {draft.exercises.length === 0 && (
               <section
                 className="quick-exercises"
@@ -1718,78 +1748,121 @@ function WorkoutApp({
               <section className="exercise-card" key={ex.id}>
                 <div className="section-heading">
                   <div>
-                    <span className="meta">{ex.muscle}</span>
+                    <span className="meta">
+                      {ex.muscle} · {countSets([ex])}/{ex.sets.length}세트 완료
+                    </span>
                     <h2>{ex.name}</h2>
                   </div>
-                  <button
-                    className="icon-button"
-                    aria-label={`${ex.name} 삭제`}
-                    onClick={() => {
-                      if (
-                        ex.sets.some((row) => row.done) &&
-                        !confirm(`${ex.name}의 완료한 세트도 삭제할까요?`)
-                      )
-                        return;
-                      updateDraft((d) => ({
-                        ...d,
-                        exercises: d.exercises.filter((x) => x.id !== ex.id),
-                      }));
-                    }}
-                  >
-                    <Icon name="close" size={19} />
-                  </button>
-                </div>
-                <div className="exercise-tools">
-                  <p className="meta">
-                    {(() => {
-                      const past = previousExercise(data.sessions, ex.name);
-                      const row = past?.exercise.sets.find((x) => x.done);
-                      return past && row
-                        ? `지난 운동 ${dateLabel(past.session.date)} · ${row.weight}kg × ${row.reps}회`
-                        : "첫 기록이에요";
-                    })()}
-                  </p>
                   <Button
-                    size="small"
+                    size="medium"
+                    variant="weak"
+                    color="dark"
+                    id={`exercise-manage-${ex.id}`}
+                    aria-expanded={managedExercise === ex.id}
+                    aria-controls={`exercise-tools-${ex.id}`}
                     onClick={() =>
-                      updateDraft((d) => ({
-                        ...d,
-                        exercises: d.exercises.map((x) =>
-                          x.id === ex.id ? fillPrevious(x, data.sessions) : x,
-                        ),
-                      }))
+                      setManagedExercise(
+                        managedExercise === ex.id ? null : ex.id,
+                      )
                     }
                   >
-                    빈 입력에 지난 값
+                    종목 관리
                   </Button>
-                  {[-1, 1].map((direction) => (
-                    <Button
-                      key={direction}
-                      size="small"
-                      disabled={
-                        draft.exercises.findIndex((x) => x.id === ex.id) +
-                          direction <
-                          0 ||
-                        draft.exercises.findIndex((x) => x.id === ex.id) +
-                          direction >=
-                          draft.exercises.length
+                </div>
+                {managedExercise === ex.id && (
+                  <div
+                    className="exercise-tools"
+                    id={`exercise-tools-${ex.id}`}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        setManagedExercise(null);
+                        document
+                          .getElementById(`exercise-manage-${ex.id}`)
+                          ?.focus();
                       }
+                    }}
+                  >
+                    <p className="meta">
+                      {(() => {
+                        const past = previousExercise(data.sessions, ex.name);
+                        const row = past?.exercise.sets.find((x) => x.done);
+                        return past && row
+                          ? `지난 운동 ${dateLabel(past.session.date)} · ${row.weight}kg × ${row.reps}회`
+                          : "첫 기록이에요";
+                      })()}
+                    </p>
+                    <Button
+                      size="small"
                       onClick={() =>
-                        updateDraft((d) => {
-                          const items = [...d.exercises];
-                          const i = items.findIndex((x) => x.id === ex.id);
-                          [items[i], items[i + direction]] = [
-                            items[i + direction],
-                            items[i],
-                          ];
-                          return { ...d, exercises: items };
-                        })
+                        updateDraft((d) => ({
+                          ...d,
+                          exercises: d.exercises.map((x) =>
+                            x.id === ex.id ? fillPrevious(x, data.sessions) : x,
+                          ),
+                        }))
                       }
                     >
-                      {direction === -1 ? "위로 이동" : "아래로 이동"}
+                      빈 입력에 지난 값
                     </Button>
-                  ))}
-                </div>
+                    {[-1, 1].map((direction) => (
+                      <Button
+                        key={direction}
+                        size="small"
+                        disabled={
+                          draft.exercises.findIndex((x) => x.id === ex.id) +
+                            direction <
+                            0 ||
+                          draft.exercises.findIndex((x) => x.id === ex.id) +
+                            direction >=
+                            draft.exercises.length
+                        }
+                        onClick={() =>
+                          updateDraft((d) => {
+                            const items = [...d.exercises];
+                            const i = items.findIndex((x) => x.id === ex.id);
+                            [items[i], items[i + direction]] = [
+                              items[i + direction],
+                              items[i],
+                            ];
+                            return { ...d, exercises: items };
+                          })
+                        }
+                      >
+                        {direction === -1 ? "위로 이동" : "아래로 이동"}
+                      </Button>
+                    ))}
+                    <button
+                      className="exercise-delete"
+                      aria-label={`${ex.name} 삭제`}
+                      onClick={() => {
+                        if (
+                          ex.sets.some((row) => row.done) &&
+                          !confirm(`${ex.name}의 완료한 세트도 삭제할까요?`)
+                        )
+                          return;
+                        setManagedExercise(null);
+                        const focusId = draft.exercises.find(
+                          (x) => x.id !== ex.id,
+                        )?.id;
+                        requestAnimationFrame(() =>
+                          document
+                            .getElementById(
+                              focusId
+                                ? `exercise-manage-${focusId}`
+                                : "workout-main-action",
+                            )
+                            ?.focus(),
+                        );
+                        updateDraft((d) => ({
+                          ...d,
+                          exercises: d.exercises.filter((x) => x.id !== ex.id),
+                        }));
+                      }}
+                    >
+                      종목 삭제
+                    </button>
+                  </div>
+                )}
                 <div className="set-grid set-labels">
                   <span>세트</span>
                   <span>무게 kg</span>
@@ -1798,7 +1871,7 @@ function WorkoutApp({
                 </div>
                 {ex.sets.map((s, i) => (
                   <div
-                    className={`set-grid ${s.done ? "set-done" : ""}`}
+                    className={`set-grid ${s.done ? "set-done" : ""} ${nextSet?.exerciseId === ex.id && nextSet.setId === s.id ? "set-next" : ""}`}
                     key={s.id}
                   >
                     <span className="set-number">{i + 1}</span>
@@ -1869,6 +1942,26 @@ function WorkoutApp({
                     >
                       <Icon name="check" size={20} />
                     </button>
+                    <span className="set-previous">
+                      {(() => {
+                        const previous = previousCompletedSet(
+                          data.sessions,
+                          ex.name,
+                          i,
+                        );
+                        const bodyweight =
+                          ex.name === "크런치" ||
+                          data.customExercises?.some(
+                            (x) =>
+                              x.name === ex.name && x.mode === "bodyweight",
+                          );
+                        return previousSetLabel(previous, !!bodyweight);
+                      })()}
+                      {nextSet?.exerciseId === ex.id &&
+                        nextSet.setId === s.id && (
+                          <span className="sr-only"> · 다음 세트</span>
+                        )}
+                    </span>
                   </div>
                 ))}
                 <button
@@ -1902,6 +1995,7 @@ function WorkoutApp({
             ))}
             {draft.exercises.length > 0 && (
               <Button
+                id="add-workout-exercise"
                 display="block"
                 variant="weak"
                 onClick={() => {
@@ -2134,6 +2228,7 @@ function WorkoutApp({
       )}
       {!routineEditing && (page === "workout" || page === "routines") && (
         <BottomCTA.Single
+          id="workout-main-action"
           disabled={isSaving || initial.error}
           fixed
           takeSpace={false}

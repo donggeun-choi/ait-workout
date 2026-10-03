@@ -1,0 +1,13 @@
+import { createCommunityServer } from './community-server.mjs';
+import { createTossVerifier } from './toss-auth.mjs';
+const production = process.env.NODE_ENV !== 'development';
+let authVerifier;
+if (process.env.TOSS_MTLS_CERT_PATH && process.env.TOSS_MTLS_KEY_PATH) authVerifier = createTossVerifier({certPath:process.env.TOSS_MTLS_CERT_PATH,keyPath:process.env.TOSS_MTLS_KEY_PATH});
+if (production && (!authVerifier || process.env.COMMUNITY_PUBLIC_ENABLED !== 'true' || (process.env.COMMUNITY_ADMIN_TOKEN?.length??0)<32 || !process.env.COMMUNITY_POLICY_URL?.startsWith('https://') || !process.env.COMMUNITY_OPERATOR_CONTACT || !process.env.TOSS_CALLBACK_BASIC_AUTH)) throw new Error('Production requires mTLS, explicit public activation, admin token, policy URL, operator contact and callback Basic auth');
+const retentionDays = Number(process.env.COMMUNITY_RETENTION_DAYS ?? 30);
+if (!Number.isInteger(retentionDays) || retentionDays<1 || retentionDays>365) throw new Error('Retention must be 1–365 days');
+const {server}=createCommunityServer({environment:process.env.NODE_ENV,allowDevAuth:process.env.COMMUNITY_DEV_AUTH==='true',dbPath:process.env.COMMUNITY_DB_PATH??'data/community.sqlite',authVerifier,adminToken:process.env.COMMUNITY_ADMIN_TOKEN,callbackBasicAuth:process.env.TOSS_CALLBACK_BASIC_AUTH,retentionDays,policyUrl:process.env.COMMUNITY_POLICY_URL,operatorContact:process.env.COMMUNITY_OPERATOR_CONTACT,allowedOrigins:(process.env.COMMUNITY_ALLOWED_ORIGINS??'http://127.0.0.1:5173,http://127.0.0.1:5193,http://localhost:5173').split(',')});
+const host=process.env.COMMUNITY_HOST??'127.0.0.1',port=Number(process.env.COMMUNITY_PORT??5194);
+if (!production && process.env.COMMUNITY_DEV_AUTH==='true' && !['127.0.0.1','::1','localhost'].includes(host)) throw new Error('Development authentication requires loopback binding');
+server.listen(port,host,()=>console.log(`Community server: http://${host}:${port} (${production?'production':'development'})`));
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.close(()=>process.exit(0)));

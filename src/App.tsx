@@ -257,6 +257,13 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
         <path d="M8 9h8M8 12h5" />
       </>
     ),
+    down: <path d="m6 9 6 6 6-6" />,
+    skip: (
+      <>
+        <path d="m5 5 9 7-9 7V5Z" />
+        <path d="M19 5v14" />
+      </>
+    ),
     more: (
       <>
         <circle cx="5" cy="12" r="1" />
@@ -1631,7 +1638,6 @@ function WorkoutApp({
         {page === "workout" && draft && (
           <>
             <section className="page-heading session-heading">
-              <p className="workout-kicker">오늘의 운동</p>
               <div className="workout-title-row">
                 <h1>{draft.name}</h1>
                 {!initial.error && (
@@ -1664,8 +1670,20 @@ function WorkoutApp({
               </div>
             </section>
             <section className="rest-panel" aria-label="휴식 타이머">
+              <div className="rest-summary">
+                <Icon name="time" size={18} />
+                <strong>
+                  {draft.restUntil === null
+                    ? data.settings?.restSeconds === 0
+                      ? "휴식 꺼짐"
+                      : "휴식 대기"
+                    : rest > 0
+                      ? clock(rest)
+                      : "휴식 완료"}
+                </strong>
+              </div>
               <label className="rest-setting">
-                기본 휴식{" "}
+                <span className="sr-only">기본 휴식</span>
                 <select
                   aria-label="기본 휴식"
                   value={data.settings?.restSeconds ?? 90}
@@ -1695,43 +1713,29 @@ function WorkoutApp({
                     </option>
                   ))}
                 </select>
+                <Icon name="down" size={14} />
               </label>
-              <div className="rest-card">
-                <div>
-                  <Icon name="time" size={22} />
-                  <strong>
-                    {draft.restUntil === null
-                      ? data.settings?.restSeconds === 0
-                        ? "자동 휴식 꺼짐"
-                        : "세트 완료 후 휴식 시작"
-                      : rest > 0
-                        ? `휴식 ${clock(rest)}`
-                        : "휴식이 끝났어요"}
-                  </strong>
-                </div>
-                <button
-                  className="plain-button"
-                  disabled={draft.restUntil === null}
-                  onClick={() =>
-                    updateDraft((d) => ({
-                      ...d,
-                      restUntil:
-                        Math.max(Date.now(), d.restUntil ?? Date.now()) + 30000,
-                    }))
-                  }
-                >
-                  +30초
-                </button>
-                <button
-                  className="plain-button"
-                  disabled={draft.restUntil === null}
-                  onClick={() =>
-                    updateDraft((d) => ({ ...d, restUntil: null }))
-                  }
-                >
-                  {rest > 0 ? "건너뛰기" : "닫기"}
-                </button>
-              </div>
+              <button
+                className="plain-button"
+                disabled={draft.restUntil === null}
+                onClick={() =>
+                  updateDraft((d) => ({
+                    ...d,
+                    restUntil:
+                      Math.max(Date.now(), d.restUntil ?? Date.now()) + 30000,
+                  }))
+                }
+              >
+                +30초
+              </button>
+              <button
+                className="plain-button"
+                disabled={draft.restUntil === null}
+                aria-label={rest > 0 ? "휴식 건너뛰기" : "휴식 닫기"}
+                onClick={() => updateDraft((d) => ({ ...d, restUntil: null }))}
+              >
+                <Icon name={rest > 0 ? "skip" : "close"} size={18} />
+              </button>
             </section>
             {draft.exercises.length === 0 && (
               <section

@@ -137,3 +137,11 @@ main 병합 후 같은 전체 check를 재실행해35개 테스트와 모든 빌
 - 전체 check: 38개 테스트, ESLint, TypeScript, 웹 빌드와 .ait 생성 통과. 기존 번들 크기 경고는 유지된다.
 - 캡처: screenshots/workout-redesign/strong-workout-390.jpg, strong-workout-320.jpg, strong-preparation-390.jpg. AIT는 개발 도구다. 실제 토스 키보드·safe area·뒤로가기는 실기기 검증이 남아 있다.
 - 품질 확인: 원본 로고/이미지 사용 없음, 자체 토큰·시스템 폰트·SVG 아이콘, 보조 정보13px/본문15px 이상, 운동 흐름 광고 없음. 준비와 시트는 밝은 테마를 유지한다.
+
+## 운동 화면 밀도·휴식 설정 조정 (2026-10-03)
+
+- 별도 5205 origin에서 검증하고 5201 사용자 기록은 조작하지 않았다.
+- 320×740: 가로 넘침 없음, main 입력/버튼/선택 터치 영역44px 이상, 휴식 영역62px, 세트 행74px. 세 번째 행 하단535px, CTA 상단564px로 기본 3세트가 CTA에 가려지지 않는다. 390×844에서는 세트 추가·운동 추가까지 확인했다.
+- 휴식60초 선택 → 37.5kg 입력 → 완료 시01:00 → +30초로01:30 → 건너뛰기 → 끄기에서 다른 세트 완료 시 타이머 시작 안 함 → 완료 취소 → 120초 선택 → 새로고침에서 설정·37.5kg·1완료세트 복원을 확인했다.
+- 캡처는 screenshots/workout-redesign/compact-workout-320.jpg, compact-workout-390.jpg다. 실제 토스 키보드·safe area는 별도 기기 확인 범위다.
+- bash scripts/check.sh: 38개 테스트, ESLint, TypeScript, 웹 빌드·.ait 생성 통과. 기존 번들 크기 경고 유지.

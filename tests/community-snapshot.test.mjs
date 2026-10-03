@@ -16,7 +16,7 @@ const { outputText } = ts.transpileModule(source, {
     module: ts.ModuleKind.ES2022,
   },
 });
-const { publicSnapshot, graphemeCount } = await import(
+const { publicSnapshot, graphemeCount, assertComposerAccount } = await import(
   `data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`
 );
 const session = {
@@ -75,4 +75,15 @@ test("each disclosure option is independent and excludes unfinished sets", () =>
 test("visible character counts preserve composed Korean, emoji family and combining marks", () => {
   assert.equal(graphemeCount("가👨‍👩‍👧‍👦e\u0301"), 3);
   assert.equal(graphemeCount("👍🏽".repeat(100)), 100);
+});
+
+test("composer allows same-account reauthentication and rejects switching or missing accounts", () => {
+  assert.doesNotThrow(() => assertComposerAccount("original", "original"));
+  assert.doesNotThrow(() => assertComposerAccount(undefined, "first-login"));
+  assert.throws(() => assertComposerAccount("original", "other"), {
+    code: "ACCOUNT_CHANGED",
+  });
+  assert.throws(() => assertComposerAccount("original", undefined), {
+    code: "ACCOUNT_CHANGED",
+  });
 });

@@ -19,6 +19,7 @@ import {
 import type { Session } from "./workout-model";
 import {
   CommunityError,
+  assertComposerAccount,
   auth,
   communityRequest,
   graphemeCount,
@@ -242,11 +243,13 @@ export function ShareWorkout({
     if (busy) return;
     setBusy(true);
     setError("");
+    const ownerAtSubmission = lastAccount.current;
     try {
       if (graphemeCount(comment) > 100)
         throw new Error("소감은 100자까지 적어 주세요.");
       const nextAccount = await login();
       if (!mounted.current) return;
+      assertComposerAccount(ownerAtSubmission, nextAccount.id);
       if (!nextAccount.rulesAccepted || !nextAccount.nickname) {
         const length = graphemeCount(nickname.trim());
         if (length < 2 || length > 12 || !agreed)
@@ -256,6 +259,7 @@ export function ShareWorkout({
         await saveProfile(nickname);
       }
       if (!mounted.current) return;
+      assertComposerAccount(nextAccount.id, auth.current()?.id);
       const payload = JSON.stringify(snapshot);
       if (request.current?.payload !== payload)
         request.current = { payload, id: crypto.randomUUID() };
@@ -520,11 +524,12 @@ export function Community({
           disabled={busy}
           onClick={() =>
             void action(async () => {
+              setSettings(true);
+              setBlocks([]);
               const result = await communityRequest<{
                 users: { id: string; nickname: string }[];
               }>("/blocks");
               setBlocks(result.users);
-              setSettings(true);
             })
           }
         >

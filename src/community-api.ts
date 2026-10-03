@@ -83,6 +83,16 @@ export class CommunityError extends Error {
     super(message);
   }
 }
+export function assertComposerAccount(
+  ownerId: string | undefined,
+  nextId: string | undefined,
+) {
+  if (!nextId || (ownerId && ownerId !== nextId))
+    throw new CommunityError(
+      "ACCOUNT_CHANGED",
+      "계정이 바뀌었어요. 새 계정으로 공개할 내용을 다시 확인해 주세요.",
+    );
+}
 let token: string | null = null;
 let user: CommunityUser | null = null;
 let revision = 0;

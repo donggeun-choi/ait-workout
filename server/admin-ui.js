@@ -13,9 +13,10 @@ function action(article, title, path, body) {
   button.onclick = async () => { button.disabled = true; try { await request(path, body); status.textContent = '처리했어요'; } catch (error) { status.textContent = error.message; } finally { button.disabled = false; } };
   article.append(button);
 }
-document.querySelector('#load').onclick = async () => {
+let nextCursor=null;
+async function loadMore(reset=false) {
   try {
-    const value = await request('reports'); reports.replaceChildren();
+    const value = await request(`reports${!reset&&nextCursor?'?cursor='+encodeURIComponent(nextCursor):''}`); if(reset)reports.replaceChildren();
     for (const report of value.reports) {
       const article = node('article', '');
       article.append(node('h2', `${report.nickname ?? '삭제된 계정'} · ${report.reason}`), node('p', `${report.status} · ${new Date(report.created).toLocaleString()}`), node('pre', report.snapshot ?? '탈퇴로 공개 스냅샷이 제거됨'));
@@ -23,6 +24,8 @@ document.querySelector('#load').onclick = async () => {
       if (report.authorId) { action(article, '계정 제한', `users/${report.authorId}`, { restricted: true }); action(article, '제한 해제', `users/${report.authorId}`, { restricted: false }); }
       action(article, '처리 완료', `reports/${report.id}`, { status: 'reviewed' }); action(article, '신고 기각', `reports/${report.id}`, { status: 'dismissed' }); reports.append(article);
     }
-    status.textContent = `${value.reports.length}건을 불러왔어요`;
+    nextCursor=value.nextCursor;document.querySelector('#more').hidden=!nextCursor;status.textContent = `${value.reports.length}건을 추가로 불러왔어요`;
   } catch (error) { status.textContent = error.message; }
-};
+}
+document.querySelector('#load').onclick=()=>loadMore(true);
+document.querySelector('#more').onclick=()=>loadMore();

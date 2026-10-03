@@ -38,7 +38,7 @@ export function createCommunityServer(options = {}) {
   const rows = (sql, ...args) => db.prepare(sql).all(...args);
   const run = (sql, ...args) => db.prepare(sql).run(...args);
   const transaction = fn => { db.exec('BEGIN IMMEDIATE'); try { const value = fn(); db.exec('COMMIT'); return value; } catch (error) { db.exec('ROLLBACK'); throw error; } };
-  const userView = user => ({ id: user.id, nickname: user.nickname, rulesAccepted: Boolean(user.accepted), identityKind: user.kind });
+  const userView = user => ({ id: user.id, nickname: user.nickname, rulesAccepted: Boolean(user.accepted), identityKind: user.kind, restricted: Boolean(user.restricted) });
   const audit = (action, target) => run('INSERT INTO audit VALUES(?,?,?,?)', randomUUID(), action, target, now());
   const purge = () => transaction(() => {
     const cutoff = now() - (options.retentionDays ?? 30) * 86400000;
@@ -87,7 +87,7 @@ export function createCommunityServer(options = {}) {
     if ((weights || reps) && setCount !== body.completedSetCount) fail(400,'INVALID_PAYLOAD','완료 세트 수를 확인해 주세요');
     return {workoutDate:body.workoutDate,exerciseCount:body.exerciseCount,completedSetCount:body.completedSetCount,comment,visibility:body.visibility,exercises};
   };
-  const bodyOf = async req => { let value=''; for await (const chunk of req) { value += chunk; if (Buffer.byteLength(value) > 65536) fail(413,'PAYLOAD_TOO_LARGE','입력이 너무 커요'); } try { return value ? JSON.parse(value) : {}; } catch { fail(400,'INVALID_JSON','입력을 확인해 주세요'); } };
+  const bodyOf = async req => { const chunks=[];let size=0; for await (const chunk of req) { chunks.push(chunk);size+=chunk.length; if (size > 65536) fail(413,'PAYLOAD_TOO_LARGE','입력이 너무 커요'); } const value=Buffer.concat(chunks).toString('utf8'); try { return value ? JSON.parse(value) : {}; } catch { fail(400,'INVALID_JSON','입력을 확인해 주세요'); } };
   const server = http.createServer(async (req,res) => {
     res.setHeader('Content-Type','application/json; charset=utf-8'); res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff');
     const send = (value,status=200) => { res.writeHead(status); res.end(JSON.stringify(value)); };
@@ -96,9 +96,11 @@ export function createCommunityServer(options = {}) {
       const method=req.method;
       if(['/admin-ui','/admin-ui.js'].includes(path)&&method==='GET'){res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript; charset=utf-8':'text/html; charset=utf-8');res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'");res.end(readFileSync(new URL(path.endsWith('.js')?'./admin-ui.js':'./admin.html',import.meta.url)));return;}
       const origin=req.headers.origin;
-      if (origin && options.allowedOrigins?.includes(origin)) { res.setHeader('Access-Control-Allow-Origin',origin); res.setHeader('Vary','Origin'); res.setHeader('Access-Control-Allow-Headers','Authorization,Content-Type'); res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,PUT,DELETE,OPTIONS'); }
-      if (method==='OPTIONS') { if (!origin || !options.allowedOrigins?.includes(origin)) fail(403,'ORIGIN_DENIED','허용되지 않은 요청이에요'); return send({}); }
-      if (origin && !options.allowedOrigins?.includes(origin)) fail(403,'ORIGIN_DENIED','허용되지 않은 요청이에요');
+      const adminOrigin=options.adminOrigin??(dev?`http://127.0.0.1:${server.address().port}`:undefined);
+      const allowedOrigins=[...(options.allowedOrigins??[]),...(adminOrigin?[adminOrigin]:[])];
+      if (origin && allowedOrigins.includes(origin)) { res.setHeader('Access-Control-Allow-Origin',origin); res.setHeader('Vary','Origin'); res.setHeader('Access-Control-Allow-Headers','Authorization,Content-Type'); res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,PUT,DELETE,OPTIONS'); }
+      if (method==='OPTIONS') { if (!origin || !allowedOrigins.includes(origin)) fail(403,'ORIGIN_DENIED','허용되지 않은 요청이에요'); return send({}); }
+      if (origin && !allowedOrigins.includes(origin)) fail(403,'ORIGIN_DENIED','허용되지 않은 요청이에요');
       if(path==='/health' && method==='GET')return send({status:'ok',auth:dev?'development':options.authVerifier?'toss':'unavailable'});
       if(path==='/policy' && method==='GET')return send({rules:['욕설·혐오, 광고·도배, 개인정보 노출을 금지해요','오프라인 기록의 인증은 실제 운동 수행을 보증하지 않아요'],retentionDays:options.retentionDays??30,policyUrl:options.policyUrl??null,operatorContact:options.operatorContact??null});
       const body = ['POST','PUT','PATCH','DELETE'].includes(method) ? await bodyOf(req) : {};
@@ -111,7 +113,14 @@ export function createCommunityServer(options = {}) {
       }
       if (path.startsWith('/admin')) {
         if (!options.adminToken || !safeEqual(req.headers.authorization,`Bearer ${options.adminToken}`)) fail(403,'ADMIN_REQUIRED','운영 권한이 필요해요');
-        if (path==='/admin/reports' && method==='GET') return send({reports:rows('SELECT r.*,p.snapshot,p.status AS postStatus,p.author AS authorId,u.nickname FROM reports r LEFT JOIN posts p ON p.id=r.post LEFT JOIN users u ON u.id=p.author ORDER BY r.created DESC LIMIT 100')});
+        if (path==='/admin/reports' && method==='GET') {
+          const state=url.searchParams.get('status')??'pending';if(!['pending','reviewed','dismissed','all'].includes(state))fail(400,'INVALID_PAYLOAD','신고 상태를 확인해 주세요');
+          const cursor=url.searchParams.get('cursor');let boundary;
+          if(cursor){try{boundary=JSON.parse(Buffer.from(cursor,'base64url').toString());if(!Number.isSafeInteger(boundary.created)||typeof boundary.id!=='string'||boundary.id.length>80)throw new Error();}catch{fail(400,'INVALID_CURSOR','페이지를 확인해 주세요');}}
+          const clauses=[],args=[];if(state!=='all'){clauses.push('r.status=?');args.push(state);}if(boundary){clauses.push('(r.created<? OR (r.created=? AND r.id<?))');args.push(boundary.created,boundary.created,boundary.id);}
+          const found=rows(`SELECT r.*,p.snapshot,p.status AS postStatus,p.author AS authorId,u.nickname FROM reports r LEFT JOIN posts p ON p.id=r.post LEFT JOIN users u ON u.id=p.author ${clauses.length?'WHERE '+clauses.join(' AND '):''} ORDER BY r.created DESC,r.id DESC LIMIT 101`,...args);
+          const last=found[99];return send({reports:found.slice(0,100),nextCursor:found.length>100?Buffer.from(JSON.stringify({created:last.created,id:last.id})).toString('base64url'):null});
+        }
         if(path==='/admin/audit' && method==='GET') return send({events:rows('SELECT * FROM audit ORDER BY created DESC LIMIT 100')});
         if(path==='/admin/purge' && method==='POST') {purge();return send({ok:true});}
         const match=path.match(/^\/admin\/(posts|users|reports)\/([^/]+)$/);
@@ -125,7 +134,6 @@ export function createCommunityServer(options = {}) {
         else {exact(body,['authorizationCode','referrer']);text(body.authorizationCode,1,4096);if(!['DEFAULT','SANDBOX'].includes(body.referrer))fail(400,'INVALID_PAYLOAD','로그인 환경을 확인해 주세요');if(environment==='production' && body.referrer!=='DEFAULT')fail(403,'SANDBOX_DISABLED','운영 환경에는 토스 로그인이 필요해요');if(!options.authVerifier)fail(503,'AUTH_UNAVAILABLE','토스 로그인 연결을 준비 중이에요');try{verified=await options.authVerifier.verify(body);}catch{fail(401,'AUTH_FAILED','토스 로그인에 실패했어요');}if(!verified || verified.identityKind!=='toss' || !/^\d+$/.test(verified.subject) || Number(verified.subject)<=0)fail(401,'AUTH_FAILED','사용자를 확인할 수 없어요');}
         let user=query('SELECT * FROM users WHERE subject=?',verified.subject);
         if(!user){run('INSERT INTO users(id,subject,kind) VALUES(?,?,?)',randomUUID(),verified.subject,verified.identityKind);user=query('SELECT * FROM users WHERE subject=?',verified.subject);}
-        if(user.restricted)fail(403,'ACCOUNT_RESTRICTED','참여가 제한된 계정이에요');
         const token=randomBytes(32).toString('base64url');run('INSERT INTO sessions VALUES(?,?,?)',digest(token),user.id,now()+(options.sessionTtlMs??3600000));return send({token,user:userView(user)});
       }
       const bearer=req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];

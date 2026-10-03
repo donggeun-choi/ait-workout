@@ -6,13 +6,13 @@ Node 24의 `node:http`와 `node:sqlite` 기반 실제 서버다. DB 기본 경�
 
 `npm run dev:community`는 127.0.0.1:5194에서 명시적으로 개발 인증을 허용한다. 개발 사용자는 `identityKind: development`로 구분한다. 개발 인증은 NODE_ENV=development, 허용 플래그, 연결 원격 주소 loopback을 모두 확인하며 운영에서 항상 거부한다. 클라이언트 개발 설정 역시 운영 번들에서 켜지 않는다.
 
-`npm run start:community`는 운영 모드다. `server/.env.server.example`의 환경 변수를 배포 환경에 설정한다. 다음 항목이 없으면 시작이 실패한다: 토스 mTLS 인증서/키, `COMMUNITY_PUBLIC_ENABLED=true`, 32자 이상 운영 토큰, HTTPS 개인정보 처리 안내 URL, 운영 담당자 연락처, 콘솔에 등록한 Basic 인증 값. 준비하지 않은 정책이나 담당자를 있다고 표시하지 않는다. 정책의 법적 적합성은 별도 출시 준비다. 공개 활성화·콘솔 설정·자격 증명 발급·배포는 이 구현에 포함하지 않았다.
+`npm run start:community`는 운영 모드다. `server/.env.server.example`의 환경 변수를 배포 환경에 설정한다. 다음 항목이 없으면 시작이 실패한다: 토스 mTLS 인증서/키, `COMMUNITY_PUBLIC_ENABLED=true`, 32자 이상 운영 토큰, HTTPS 개인정보 처리 안내 URL, 운영 담당자 연락처, 콘솔에 등록한 Basic 인증 값, `COMMUNITY_ADMIN_ORIGIN` HTTPS 운영 화면 출처. 준비하지 않은 정책이나 담당자를 있다고 표시하지 않는다. 정책의 법적 적합성은 별도 출시 준비다. 공개 활성화·콘솔 설정·자격 증명 발급·배포는 이 구현에 포함하지 않았다.
 
 운영은 HTTPS 역방향 프록시 뒤 단일 서버 인스턴스와 영속 볼륨으로 시작한다. SQLite를 여러 호스트에서 공유하지 않는다. 운영 시스템에서 DB와 WAL 파일을 함께 일관성 있게 백업하고 접근을 제한한다. 운영 DB를 개발 인증 서버에 연결하지 않는다. `COMMUNITY_ALLOWED_ORIGINS`는 쉼표로 분리한 정확한 웹 출처 목록이며 와일드카드는 지원하지 않는다. 프록시 신뢰 헤더로 개발 인증이나 권한을 인정하지 않는다.
 
 ## 인증
 
-토스 `appLogin()`의 `{authorizationCode,referrer}`를 `POST /api/community/auth/toss`로 보낸다. 서버가 공식 mTLS API generate-token → login-me를 호출하고 검증된 userKey만 내부 계정과 연결한다. 사용자 이름·휴대전화·토스 access/refresh token은 저장하거나 피드로 반환하지 않는다. 운영에서는 SANDBOX 로그인을 거부한다. 클라이언트 userId 필드는 거부한다.
+토스 `appLogin()`의 `{authorizationCode,referrer}`를 `POST /api/community/auth/toss`로 보낸다. 서버가 공식 mTLS API generate-token → login-me를 호출하고 검증된 userKey만 내부 계정과 연결한다. 사용자 이름·휴대전화·토스 access/refresh token은 저장하거나 피드로 반환하지 않는다. 운영에서는 SANDBOX 로그인을 거부한다. 클라이언트 userId 필드는 거부한다. 제한된 계정도 토스 인증을 마치면 제한 상태가 포함된 세션을 발급하여 재접속 후 탈퇴·로그아웃할 수 있다.
 
 서비스 토큰은 32바이트 무작위 bearer이며 서버 DB에는 SHA-256 해시만 저장한다. 기본 만료는 1시간이고 로그아웃·탈퇴 시 폐기한다. 로그인 만료는 401 AUTH_EXPIRED다. 개발에서 `POST /auth/dev {identity}`는 `{token,user}`를 반환한다. 이 ID는 개발 서버에서만 의미가 있다.
 
@@ -45,7 +45,7 @@ Node 24의 `node:http`와 `node:sqlite` 기반 실제 서버다. DB 기본 경�
 | GET /blocks | `{users:[{id,nickname}]}` |
 | PUT /blocks/:authorId | `{active:boolean}` 차단/해제 |
 
-user는 `{id,nickname,rulesAccepted,identityKind:'toss'|'development'}`다. 닉네임은 2–12 grapheme이며 연락처·URL 형식을 거부한다. 처음 게시하기 전 닉네임과 정책 동의가 필요하다(409 PROFILE_REQUIRED). 소감은 최대 100 grapheme. 응원은 자신에게 할 수 없다. 계정 제한은 참여와 로그인 차단, 공개 게시물/응원 숨김을 적용하며 기존 세션으로 탈퇴/로그아웃은 허용한다.
+user는 `{id,nickname,rulesAccepted,identityKind:'toss'|'development',restricted:boolean}`다. 닉네임은 2–12 grapheme이며 연락처·URL 형식을 거부한다. 처음 게시하기 전 닉네임과 정책 동의가 필요하다(409 PROFILE_REQUIRED). 소감은 최대 100 grapheme. 응원은 자신에게 할 수 없다. 계정 제한은 참여 차단과 공개 게시물/응원 숨김을 적용하며 인증·내 계정 확인·탈퇴·로그아웃은 허용한다.
 
 게시 입력 예시:
 
@@ -61,11 +61,11 @@ SQLite의 활성 (author,workout) 고유 제약과 (author,idempotencyKey) 요�
 
 ## 운영 화면과 보관
 
-`/api/community/admin-ui`는 운영 토큰 입력 화면이다. 데이터와 조작은 서버가 bearer 운영 토큰을 검사한 뒤 제공한다. 토큰은 페이지 메모리에만 존재하며 댓글/소감 등은 textContent로 렌더한다. 신고 사유·공개 스냅샷을 검토하고 인증 숨김/복구·계정 제한/해제·신고 완료/기각을 처리한다. 신고 수로 자동 삭제하지 않는다. 운영 API는 일반 사용자의 기기 운동 기록을 조회할 수 없다.
+`/api/community/admin-ui`는 운영 토큰 입력 화면이다. 변경 요청의 Origin은 `COMMUNITY_ADMIN_ORIGIN` 정확한 값만 허용한다. 개발에서는 실제 서버 포트의 `http://127.0.0.1:PORT`를 기본 허용한다. 데이터와 조작은 서버가 bearer 운영 토큰을 검사한 뒤 제공한다. 토큰은 페이지 메모리에만 존재하며 댓글/소감 등은 textContent로 렌더한다. 기본 대기 목록과 더 보기로 신고 사유·공개 스냅샷을 검토하고 인증 숨김/복구·계정 제한/해제·신고 완료/기각을 처리한다. 신고 수로 자동 삭제하지 않는다. 운영 API는 일반 사용자의 기기 운동 기록을 조회할 수 없다.
 
 | 운영 요청 | 동작 |
 |---|---|
-| GET /admin/reports | 최근 100개 신고와 현재 공개 맥락 |
+| GET /admin/reports | 기본 pending 신고와 현재 공개 맥락 100개, `{reports,nextCursor}`. `status=pending|reviewed|dismissed|all`, `cursor`로 계속 조회 |
 | PATCH /admin/posts/:id `{hidden}` | 숨김/복구 |
 | PATCH /admin/users/:id `{restricted}` | 참여 제한/해제 |
 | PATCH /admin/reports/:id `{status:'reviewed'|'dismissed'}` | 처리 상태 |
@@ -74,6 +74,6 @@ SQLite의 활성 (author,workout) 고유 제약과 (author,idempotencyKey) 요�
 
 신고와 운영 이력의 구현 기본 보관 기간은 모두 30일이다. `COMMUNITY_RETENTION_DAYS`(1–365일)로 변경하고 공개 처리 안내도 동일하게 갱신한다. 시작 시와 매시간 자동 정리하며 운영 purge API로 즉시 실행할 수 있다. 신고자의 숨김 목록은 신고 로그와 별도로 보관하고 신고 로그 정리 후에도 유지한다. 계정 탈퇴 시 숨김 목록도 제거한다. 탈퇴 즉시 게시물·응원·차단·세션·계정·중복 요청 자료를 제거한다. 관련 신고는 reporter/post 참조를 제거하고 reason/status/time만 남긴다. 관련 운영 이력도 계정/게시물 대상 참조를 제거한다. 기기 기록은 별도 선택이며 서버가 지우지 않는다. 사용자 삭제 게시물은 내용 `{}`로 비우고 중복 재시도 방지용 키를 계정 탈퇴까지 보유한다.
 
-로그인은 연결 주소당 분당 20회, 일반 참여는 계정당 분당 120회, 게시 10회, 응원 60회, 신고 10회, 공개 피드 읽기는 주소당 120회다. 카운터는 DB에 저장한다. 본문은 최대 64KiB다. 운영에서는 프록시가 추가 연결/요청 한도를 설정한다. API가 공개될 때 담당자가 신고 대기 목록을 실제로 확인해야 한다.
+로그인은 연결 주소당 분당 20회, 일반 참여는 계정당 분당 120회, 게시 10회, 응원 60회, 신고 10회, 공개 피드 읽기는 주소당 120회다. 카운터는 DB에 저장한다. 본문은 최대 64KiB이며 네트워크 청크를 바이트로 모은 뒤 UTF-8을 한 번 디코딩해 분할된 한글을 보존한다. 운영에서는 프록시가 추가 연결/요청 한도를 설정한다. API가 공개될 때 담당자가 신고 대기 목록을 실제로 확인해야 한다.
 
 검증: `node --test tests/community-server.test.mjs`. 재시도·동시 제출·계정 권한·개발/운영 인증 분리·선택 공개 검증·grapheme·신고·차단·숨김·탈퇴·영속 저장·20개 페이지를 통합 검증한다. 실제 토스 서버 연동은 발급된 mTLS와 콘솔 설정으로 별도 기기 검증해야 한다.

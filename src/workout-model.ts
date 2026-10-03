@@ -388,3 +388,20 @@ export function workoutDay(date: string) {
     day: "2-digit",
   }).format(new Date(date));
 }
+
+export function previousCompletedSet(
+  sessions: Session[], name: string, index: number,
+): Readonly<SetRow> | null {
+  if (!Number.isInteger(index) || index < 0) return null;
+  return previousExercise(sessions, name)?.exercise.sets.filter(row => row.done)[index] ?? null;
+}
+
+export function firstIncompleteSet(
+  exercises: Exercise[],
+): { exerciseId: string; setId: string } | null {
+  for (const exercise of exercises) {
+    const set = exercise.sets.find(row => !row.done);
+    if (set) return { exerciseId: exercise.id, setId: set.id };
+  }
+  return null;
+}

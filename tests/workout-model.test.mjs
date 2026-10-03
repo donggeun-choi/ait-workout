@@ -12,7 +12,7 @@ const { outputText } = ts.transpileModule(source, {
     module: ts.ModuleKind.ES2022,
   },
 });
-const { copySessionToDraft, prepareRepeat } = await import(
+const { copySessionToDraft, prepareRepeat, previousCompletedSet, firstIncompleteSet } = await import(
   `data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`
 );
 
@@ -106,4 +106,37 @@ test("repeat excludes empty exercises and keeps order, bodyweight and decimal st
   );
   assert.equal(draft.exercises[0].sets[0].weight, "62.5");
   assert.equal(draft.exercises[1].sets[0].weight, "0");
+});
+
+test('previous completed set uses latest same exercise, skips unfinished and never repeats a missing row', () => {
+  const old = session();
+  const latest = structuredClone(old);
+  latest.date = '2026-10-02T00:00:00Z';
+  latest.exercises[0].sets = [
+    {id:'a',weight:'37.5',reps:'10',done:true},
+    {id:'b',weight:'99',reps:'99',done:false},
+    {id:'c',weight:'0',reps:'12',done:true},
+  ];
+  const items = [old,latest];
+  const before = JSON.stringify(items);
+  const name = latest.exercises[0].name;
+  assert.equal(previousCompletedSet(items,name,0).weight,'37.5');
+  assert.equal(previousCompletedSet(items,name,1).weight,'0');
+  assert.equal(previousCompletedSet(items,name,2),null);
+  assert.equal(previousCompletedSet(items,name,-1),null);
+  assert.equal(previousCompletedSet(items,'없는 종목',0),null);
+  assert.equal(previousCompletedSet([],name,0),null);
+  assert.equal(JSON.stringify(items),before);
+});
+test('first incomplete set follows current exercise order and completion cancellation', () => {
+  const exercises = [
+    {id:'x',sets:[{id:'a',done:true},{id:'b',done:false}]},
+    {id:'y',sets:[{id:'c',done:false}]},
+  ];
+  assert.deepEqual(firstIncompleteSet(exercises),{exerciseId:'x',setId:'b'});
+  assert.deepEqual(firstIncompleteSet([...exercises].reverse()),{exerciseId:'y',setId:'c'});
+  exercises[0].sets[0].done = false;
+  assert.deepEqual(firstIncompleteSet(exercises),{exerciseId:'x',setId:'a'});
+  assert.equal(firstIncompleteSet([]),null);
+  assert.equal(firstIncompleteSet([{id:'z',sets:[{id:'s',done:true}]}]),null);
 });

@@ -145,3 +145,11 @@ main 병합 후 같은 전체 check를 재실행해35개 테스트와 모든 빌
 - 휴식60초 선택 → 37.5kg 입력 → 완료 시01:00 → +30초로01:30 → 건너뛰기 → 끄기에서 다른 세트 완료 시 타이머 시작 안 함 → 완료 취소 → 120초 선택 → 새로고침에서 설정·37.5kg·1완료세트 복원을 확인했다.
 - 캡처는 screenshots/workout-redesign/compact-workout-320.jpg, compact-workout-390.jpg다. 실제 토스 키보드·safe area는 별도 기기 확인 범위다.
 - bash scripts/check.sh: 38개 테스트, ESLint, TypeScript, 웹 빌드·.ait 생성 통과. 기존 번들 크기 경고 유지.
+
+## 컬러 통일·자체 휴식 선택 (2026-10-03)
+
+- 사용자 요청에 따라 운동 진행·준비·CTA·완료 상태를 공통 blue/흰 배경/중립색으로 통일했다. 기존 밀도를 유지한다.
+- 네이티브 드롭다운을 자체 선택 패널로 교체했다. 별도5207 origin에서60초 선택 후 완료→01:00, 끄기→타이머 해제,120초 선택 후 새로고침→설정·완료 세트 복원을 확인했다.
+- 선택 후 버튼 포커스 복귀, Escape 닫기, 바깥 클릭 닫기를 확인했다.320px에서 패널 좌우33~289px, 가로 넘침 없음, 버튼/입력44px 이상, 휴식 영역62px 유지.
+- 전체 check:38개 테스트·ESLint·TypeScript·웹/.ait 빌드 통과. 기존 번들 크기 경고 유지. 실제 토스 키보드·safe area는 기기 검증 범위다.
+- 캡처:screenshots/workout-redesign/blue-rest-picker-320.jpg, blue-rest-picker-390.jpg.

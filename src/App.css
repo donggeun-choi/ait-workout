@@ -1505,26 +1505,10 @@ main > .home-workout {
   color: var(--brand-dark);
 }
 /* Recording palette and components, inspired by the Strong concept. */
-.app-shell[data-page="workout"]:not([data-workout-active]) {
-  --brand: #526f10;
-  --brand-dark: #526f10;
-  --brand-pale: #f0f7df;
-}
-.app-shell[data-page="workout"]:not([data-workout-active])
-  :is(button, input, textarea, select):focus-visible {
-  outline-color: #526f10;
-}
+/* Workout uses the same blue/neutral palette as the rest of the mini-app. */
 .app-shell[data-workout-active] {
-  --brand: #c2f24a;
-  --brand-dark: #c2f24a;
-  --brand-pale: #2b3421;
-  --text: #f4f5f0;
-  --subtle: #a8ada5;
-  --line: #343831;
-  --surface: #141612;
-  --canvas: #22251f;
   color: var(--text);
-  color-scheme: dark;
+  color-scheme: light;
 }
 .app-shell[data-workout-active] main {
   padding-top: max(20px, var(--safe-top));
@@ -1629,24 +1613,63 @@ main > .rest-panel {
   margin: 0;
   height: 44px;
 }
-.rest-panel .rest-setting select {
-  appearance: none;
+.rest-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   width: 100%;
   height: 44px;
-  padding: 0 24px 0 10px;
+  padding: 0 10px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text);
   border-radius: 10px;
   font-size: 15px;
-  cursor: pointer;
 }
-.rest-setting > svg {
-  position: absolute;
-  right: 7px;
-  top: 15px;
-  pointer-events: none;
+.rest-picker-trigger svg {
   color: var(--subtle);
+}
+.rest-picker-trigger[aria-expanded="true"] {
+  border-color: var(--brand);
+}
+.rest-options {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: -102px;
+  z-index: 8;
+  width: 256px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(25, 31, 40, 0.12);
+}
+.rest-options p {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--subtle);
+}
+.rest-options > div {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.rest-options button {
+  padding: 0 4px;
+  white-space: nowrap;
+  min-height: 44px;
+  min-width: 44px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--canvas);
+  color: var(--text);
+  font-size: 15px;
+}
+.rest-options button[aria-pressed="true"] {
+  border-color: var(--brand);
+  background: var(--brand-pale);
+  color: var(--brand-dark);
+  font-weight: 600;
 }
 .rest-panel .plain-button {
   display: grid;
@@ -1733,7 +1756,7 @@ main > .rest-panel {
   min-height: 44px;
   padding: 8px 12px;
   border-radius: 8px;
-  color: #ff9991;
+  color: #d33535;
   background: var(--canvas);
   font-size: 15px;
 }
@@ -1795,7 +1818,7 @@ main > .rest-panel {
 }
 .exercise-card .check-button.checked {
   background: var(--brand);
-  color: #182008;
+  color: var(--surface);
   border-color: var(--brand);
 }
 .set-previous {
@@ -1899,8 +1922,8 @@ main > .rest-panel {
   min-height: 48px;
   border: 0;
   border-radius: 14px;
-  background: #c2f24a;
-  color: #182008;
+  background: var(--brand);
+  color: var(--surface);
   font-size: 17px;
   font-weight: 600;
 }
@@ -1909,17 +1932,17 @@ main > .rest-panel {
   color: var(--subtle);
 }
 .app-shell[data-page="workout"] .prepared-workout {
-  background: #22251f;
-  border: 0;
+  background: var(--canvas);
+  border: 1px solid var(--line);
 }
 .app-shell[data-page="workout"] .prepared-workout > h2 {
-  color: #f4f5f0;
-  font-size: 24px;
+  color: var(--text);
+  font-size: 22px;
 }
 .app-shell[data-page="workout"]
   .prepared-workout
   :is(p, .prepared-exercises, .exercise-order) {
-  color: #b7beb0;
+  color: var(--subtle);
 }
 .routine-entry {
   margin: 20px 24px 0;

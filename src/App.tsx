@@ -325,6 +325,85 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     </Asset.ContentIcon>
   );
 }
+function RestDurationPicker({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (seconds: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !root.current?.contains(event.target))
+        setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        trigger.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+  return (
+    <div
+      className="rest-setting"
+      ref={root}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      <button
+        className="rest-picker-trigger"
+        type="button"
+        ref={trigger}
+        aria-label={`기본 휴식 변경, 현재 ${value ? `${value}초` : "끄기"}`}
+        aria-expanded={open}
+        aria-controls="rest-duration-options"
+        onClick={() => setOpen(!open)}
+      >
+        {value ? `${value}초` : "끄기"}
+        <Icon name="down" size={14} />
+      </button>
+      {open && (
+        <div
+          id="rest-duration-options"
+          className="rest-options"
+          role="group"
+          aria-label="기본 휴식 선택"
+        >
+          <p>기본 휴식</p>
+          <div>
+            {[0, 60, 90, 120].map((seconds) => (
+              <button
+                type="button"
+                key={seconds}
+                aria-pressed={value === seconds}
+                onClick={() => {
+                  onChange(seconds);
+                  setOpen(false);
+                  trigger.current?.focus();
+                }}
+              >
+                {seconds ? `${seconds}초` : "끄기"}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 // The recording action uses the same handler as the routine TDS CTA.
 function WorkoutCTA({
   children,
@@ -1682,39 +1761,25 @@ function WorkoutApp({
                       : "휴식 완료"}
                 </strong>
               </div>
-              <label className="rest-setting">
-                <span className="sr-only">기본 휴식</span>
-                <select
-                  aria-label="기본 휴식"
-                  value={data.settings?.restSeconds ?? 90}
-                  onChange={(e) => {
-                    const restSeconds = Number(e.target.value);
-                    setData((current) => ({
-                      ...current,
-                      settings: { restSeconds },
-                      draft: current.draft
-                        ? {
-                            ...current.draft,
-                            exercises: current.draft.exercises.map(
-                              (exercise) => ({ ...exercise, restSeconds }),
-                            ),
-                            restUntil:
-                              restSeconds === 0
-                                ? null
-                                : current.draft.restUntil,
-                          }
-                        : null,
-                    }));
-                  }}
-                >
-                  {[0, 60, 90, 120].map((n) => (
-                    <option key={n} value={n}>
-                      {n ? `${n}초` : "끄기"}
-                    </option>
-                  ))}
-                </select>
-                <Icon name="down" size={14} />
-              </label>
+              <RestDurationPicker
+                value={data.settings?.restSeconds ?? 90}
+                onChange={(restSeconds) => {
+                  setData((current) => ({
+                    ...current,
+                    settings: { restSeconds },
+                    draft: current.draft
+                      ? {
+                          ...current.draft,
+                          exercises: current.draft.exercises.map(
+                            (exercise) => ({ ...exercise, restSeconds }),
+                          ),
+                          restUntil:
+                            restSeconds === 0 ? null : current.draft.restUntil,
+                        }
+                      : null,
+                  }));
+                }}
+              />
               <button
                 className="plain-button"
                 disabled={draft.restUntil === null}

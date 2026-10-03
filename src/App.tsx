@@ -12,30 +12,13 @@ import { graniteEvent } from "@apps-in-toss/web-framework";
 import "./App.css";
 import { BannerAd } from "./BannerAd";
 import { createSaveTracker, type SaveStatus } from "./save-state";
+import type { SetRow, Exercise, Session, Draft, Saved } from "./workout-model";
 import {
   completedSetFeedback,
   recordStorage,
   usePlatformScreen,
 } from "./platform";
 
-type SetRow = { id: string; weight: string; reps: string; done: boolean };
-type Exercise = { id: string; name: string; muscle: string; sets: SetRow[] };
-type Session = {
-  id: string;
-  name: string;
-  date: string;
-  seconds: number;
-  exercises: Exercise[];
-  note: string;
-};
-type Draft = {
-  name: string;
-  started: number;
-  exercises: Exercise[];
-  note: string;
-  restUntil: number | null;
-};
-type Saved = { sessions: Session[]; draft: Draft | null };
 type Page = "home" | "workout" | "dashboard" | "routines";
 const uid = () => crypto.randomUUID();
 const catalog = [

@@ -4,7 +4,6 @@ import {
   BottomCTA,
   Button,
   ListRow,
-  TextArea,
   Top,
 } from "@toss/tds-mobile";
 import { useEffect, useRef, useState } from "react";
@@ -258,6 +257,13 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
         <path d="M8 9h8M8 12h5" />
       </>
     ),
+    more: (
+      <>
+        <circle cx="5" cy="12" r="1" />
+        <circle cx="12" cy="12" r="1" />
+        <circle cx="19" cy="12" r="1" />
+      </>
+    ),
     check: <path d="m5 12 4 4L19 6" />,
     plus: <path d="M12 5v14M5 12h14" />,
     close: <path d="m6 6 12 12M6 18 18 6" />,
@@ -310,6 +316,22 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     >
       {paths[name] ?? paths.workout}
     </Asset.ContentIcon>
+  );
+}
+// The recording action uses the same handler as the routine TDS CTA.
+function WorkoutCTA({
+  children,
+  id,
+  disabled,
+  onClick,
+  containerStyle,
+}: React.ComponentProps<typeof BottomCTA.Single>) {
+  return (
+    <div className="workout-cta" style={containerStyle}>
+      <button type="button" id={id} disabled={disabled} onClick={onClick}>
+        {children}
+      </button>
+    </div>
   );
 }
 function WorkoutApp({
@@ -1000,8 +1022,14 @@ function WorkoutApp({
       </details>
     );
   }
+  const PrimaryWorkoutAction =
+    page === "workout" ? WorkoutCTA : BottomCTA.Single;
   return (
-    <div className="app-shell" data-page={page}>
+    <div
+      className="app-shell"
+      data-page={page}
+      data-workout-active={page === "workout" && !!draft ? true : undefined}
+    >
       <main ref={mainRef}>
         <div className="intro">
           <span className="eyebrow">
@@ -1603,6 +1631,7 @@ function WorkoutApp({
         {page === "workout" && draft && (
           <>
             <section className="page-heading session-heading">
+              <p className="workout-kicker">오늘의 운동</p>
               <div className="workout-title-row">
                 <h1>{draft.name}</h1>
                 {!initial.error && (
@@ -1616,15 +1645,22 @@ function WorkoutApp({
                 )}
               </div>
               <div className="session-metrics">
-                <span>
-                  <Icon name="time" size={18} />
-                  {clock(elapsed)}
-                </span>
-                <span>
-                  {countSets(draft.exercises)}/
-                  {draft.exercises.reduce((n, x) => n + x.sets.length, 0)}세트
-                  완료
-                </span>
+                <div>
+                  <span>
+                    <Icon name="time" size={16} /> 운동 시간
+                  </span>
+                  <strong>{clock(elapsed)}</strong>
+                </div>
+                <div>
+                  <span>완료한 세트</span>
+                  <strong>
+                    {countSets(draft.exercises)}
+                    <small>
+                      {" "}
+                      / {draft.exercises.reduce((n, x) => n + x.sets.length, 0)}
+                    </small>
+                  </strong>
+                </div>
               </div>
             </section>
             <section className="rest-panel" aria-label="휴식 타이머">
@@ -1747,16 +1783,20 @@ function WorkoutApp({
             {draft.exercises.map((ex) => (
               <section className="exercise-card" key={ex.id}>
                 <div className="section-heading">
+                  <span className="exercise-symbol" aria-hidden="true">
+                    <Icon name="workout" size={22} />
+                  </span>
                   <div>
-                    <span className="meta">
-                      {ex.muscle} · {countSets([ex])}/{ex.sets.length}세트 완료
-                    </span>
                     <h2>{ex.name}</h2>
+                    <span className="meta">
+                      {ex.muscle} · {countSets([ex])} / {ex.sets.length}세트
+                      완료
+                    </span>
                   </div>
-                  <Button
-                    size="medium"
-                    variant="weak"
-                    color="dark"
+                  <button
+                    type="button"
+                    className="exercise-menu"
+                    aria-label={`${ex.name} 종목 관리`}
                     id={`exercise-manage-${ex.id}`}
                     aria-expanded={managedExercise === ex.id}
                     aria-controls={`exercise-tools-${ex.id}`}
@@ -1766,8 +1806,8 @@ function WorkoutApp({
                       )
                     }
                   >
-                    종목 관리
-                  </Button>
+                    <Icon name="more" size={20} />
+                  </button>
                 </div>
                 {managedExercise === ex.id && (
                   <div
@@ -1994,24 +2034,26 @@ function WorkoutApp({
               </section>
             ))}
             {draft.exercises.length > 0 && (
-              <Button
+              <button
+                type="button"
+                className="workout-add-exercise"
                 id="add-workout-exercise"
-                display="block"
-                variant="weak"
                 onClick={() => {
                   setPicker(true);
                   setMuscle("전체");
                 }}
               >
-                운동 추가
-              </Button>
+                <Icon name="plus" size={20} /> 운동 추가
+              </button>
             )}
             {(draft.exercises.length > 0 || draft.note) && (
               <div className="workout-note">
-                <TextArea
-                  variant="box"
-                  labelOption="sustain"
-                  label="운동 메모"
+                <label htmlFor="workout-note-input">
+                  운동 메모 <span>선택</span>
+                </label>
+                <textarea
+                  id="workout-note-input"
+                  rows={2}
                   placeholder="오늘의 컨디션이나 다음 운동 목표를 남겨요"
                   value={draft.note}
                   onChange={(e) =>
@@ -2227,7 +2269,7 @@ function WorkoutApp({
         </nav>
       )}
       {!routineEditing && (page === "workout" || page === "routines") && (
-        <BottomCTA.Single
+        <PrimaryWorkoutAction
           id="workout-main-action"
           disabled={isSaving || initial.error}
           fixed
@@ -2319,7 +2361,7 @@ function WorkoutApp({
                   : selectedRoutine === null
                     ? "자유 운동 시작"
                     : `${routines[selectedRoutine].name} 시작`}
-        </BottomCTA.Single>
+        </PrimaryWorkoutAction>
       )}
       <dialog
         ref={dialogRef}

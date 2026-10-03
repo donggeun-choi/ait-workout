@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
+    "dev:community": "NODE_ENV=development COMMUNITY_DEV_AUTH=true node server/index.mjs",
+    "start:community": "NODE_ENV=production node server/index.mjs",
     "build": "tsc -b && vite build && ait build",
     "lint": "eslint .",
     "format": "prettier --write .",

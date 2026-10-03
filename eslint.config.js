@@ -7,6 +7,16 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   { ignores: ['dist'] },
   {
+    ...js.configs.recommended,
+    files: ['server/**/*.mjs'],
+    languageOptions: { ecmaVersion: 'latest', globals: globals.node },
+  },
+  {
+    ...js.configs.recommended,
+    files: ['server/admin-ui.js'],
+    languageOptions: { ecmaVersion: 'latest', globals: globals.browser },
+  },
+  {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],
     languageOptions: {

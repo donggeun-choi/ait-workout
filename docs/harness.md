@@ -1,6 +1,6 @@
 # 개발 하네스
 
-Codex에서 새 체크아웃으로도 같은 절차로 설치·실행·검증할 수 있는 구성이다. 서버나 로그인은 필요하지 않다.
+Codex에서 새 체크아웃으로도 같은 절차로 설치·실행·검증할 수 있는 구성이다. 개인 운동 기록은 서버나 로그인 없이 동작하며 커뮤니티는 별도 API 서버를 사용한다.
 
 ## 하네스의 구성과 읽는 순서
 
@@ -27,6 +27,8 @@ bash scripts/check.sh
 
 다른 환경에서는 `nvm use` 또는 `.nvmrc`의 Node 24를 설치해 실행한다. 개별 검증은 `npm run lint`, `npm run typecheck`, `npm run build:web`로 실행할 수 있다.
 
+커뮤니티까지 로컬 확인할 때는 다른 터미널에서 `bash scripts/dev-community.sh`를 실행하고 프런트엔드는 `VITE_COMMUNITY_DEV_AUTH=true bash scripts/dev.sh --host 127.0.0.1`로 시작한다. API 기본 포트는 5194다. 개발 계정은 명시적 개발 환경의 loopback에서만 허용하며 운영 빌드에서 제거한다. 프런트엔드만 실행하면 커뮤니티 연결 오류를 정직하게 표시하고 개인 기록은 그대로 사용할 수 있다. 운영 설정과 지속 저장은 [community-operations.md](community-operations.md)를 따른다.
+
 ## 작업 절차
 
 1. `AGENTS.md`, `docs/product-direction.md`와 수정할 화면의 명세를 읽는다.
@@ -39,4 +41,4 @@ bash scripts/check.sh
 
 `.github/workflows/check.yml`은 push와 pull request에서 Node 24, `npm ci`, `npm run check`를 실행한다. 저장소 읽기 권한만 사용하고 배포하지 않는다. 브라우저 시각 검증은 현재 수동 절차다.
 
-첫 버전은 로컬 저장 기반이다. 운동 화면·단일 선택·세트 기록·완료 저장 등의 흐름은 `src/App.tsx`에 있다. 디자인 명세는 `docs/workout-screen-design.md`, 검증 기록은 `docs/verification.md`를 참조한다.
+개인 기록과 루틴은 기기 저장 기반이다. 운동 흐름은 `src/App.tsx`, 기록 관리·루틴·백업은 `src/PersonalTools.tsx`, 공개 커뮤니티 화면은 `src/Community.tsx`, 서버는 `server/index.mjs`가 진입점이다. 디자인 명세는 `docs/workout-screen-design.md`, 검증 기록은 `docs/verification.md`를 참조한다. 서버 권한·멱등성·지속 저장 통합 테스트도 전체 check에 포함한다.

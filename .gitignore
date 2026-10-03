@@ -30,3 +30,9 @@ dist-ssr
 .env.*
 !.env.example
 .superset/config.local.json
+
+# Durable community database, certificates and local scratch
+data/
+*.pem
+*.key
+.superpowers/

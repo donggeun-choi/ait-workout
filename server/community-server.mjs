@@ -8,6 +8,8 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 const graphemes = value => [...new Intl.Segmenter('ko', { granularity: 'grapheme' }).segment(value)].length;
 const fail = (status, code, message) => { throw Object.assign(new Error(message), { status, code }); };
 const exact = (value, keys) => { if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !keys.includes(key))) fail(400, 'INVALID_PAYLOAD', '지원하지 않는 입력이에요'); };
+// Control characters are deliberately rejected in public user text.
+// eslint-disable-next-line no-control-regex
 const text = (value, min, max) => { if (typeof value !== 'string' || graphemes(value) < min || graphemes(value) > max || /[\u0000-\u001f\u007f]/u.test(value)) fail(400, 'INVALID_PAYLOAD', '글자 수와 입력 내용을 확인해 주세요'); return value; };
 const integer = (value, min, max) => { if (!Number.isInteger(value) || value < min || value > max) fail(400, 'INVALID_PAYLOAD', '숫자 입력을 확인해 주세요'); return value; };
 const safeEqual = (a, b) => { const x = Buffer.from(a ?? ''), y = Buffer.from(b ?? ''); return x.length === y.length && timingSafeEqual(x, y); };

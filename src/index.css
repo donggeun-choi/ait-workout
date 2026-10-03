@@ -1,6 +1,6 @@
 @import url("https://cdn.jsdelivr.net/gh/toss/tossface/dist/tossface.css");
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-family: Tossface, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   color: #26332d;
   background: #f3f5f3;
   font-synthesis: none;
@@ -53,5 +53,5 @@ button:disabled {
 body,
 .app-shell {
   font-family:
-    -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important;
+    Tossface, -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important;
 }

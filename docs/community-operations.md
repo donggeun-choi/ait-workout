@@ -25,7 +25,7 @@ API 기본 포트는 5194이고 Vite는 `/api/community`를 프록시한다. 개
 
 토스 로그인은 클라이언트 `appLogin` 결과의 authorizationCode/referrer를 서버로 전달하고, 서버가 공식 mTLS 토큰 발급·사용자 조회 API로 검증한다. 토스 이름·연락처·운동 메모를 받아 피드에 넣지 않는다. 서버는 토스 토큰을 영구 저장하지 않으며 별도의 만료되는 서비스 세션을 발급한다.
 
-운영 실행은 `npm run start:community`다. mTLS 인증서/키, 명시적인 공개 활성화, 관리자 토큰, 공개 개인정보 안내 URL, 운영 연락처, 토스 탈퇴 콜백 인증 설정을 갖추지 않으면 시작을 거부한다. 클라이언트의 `VITE_COMMUNITY_API_URL`은 `https://서버/api/community` 전체 경로로 설정해 빌드한다. 서버 origin 허용 목록에 실제 미니앱 origin을 정확히 등록한다. 와일드카드 CORS나 임의 사용자 ID 로그인은 사용하지 않는다.
+운영 실행은 `npm run start:community`다. mTLS 인증서/키, 명시적인 공개 활성화, 관리자 토큰, 공개 개인정보 안내 URL, 운영 연락처, 토스 탈퇴 콜백 인증과 관리자 화면의 정확한 HTTPS 출처(`COMMUNITY_ADMIN_ORIGIN`)를 갖추지 않으면 시작을 거부한다. 클라이언트의 `VITE_COMMUNITY_API_URL`은 `https://서버/api/community` 전체 경로로 설정해 빌드한다. 서버 origin 허용 목록에 실제 미니앱 origin을 정확히 등록한다. 와일드카드 CORS나 임의 사용자 ID 로그인은 사용하지 않는다.
 
 콘솔 로그인 약관·콜백 설정, 인증서 발급, 호스팅 계정 생성·배포, 운영 광고 ID 발급은 이 코드의 로컬 테스트로 대신할 수 없다. 담당자가 정해지고 안내 내용이 실제 운영 방식에 맞게 확정된 뒤 공개 운영을 켠다.
 

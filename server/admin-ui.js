@@ -16,7 +16,8 @@ function action(article, title, path, body) {
 let nextCursor=null;
 async function loadMore(reset=false) {
   try {
-    const value = await request(`reports${!reset&&nextCursor?'?cursor='+encodeURIComponent(nextCursor):''}`); if(reset)reports.replaceChildren();
+    const selectedStatus = document.querySelector('#report-state').value;
+    const value = await request(`reports?status=${encodeURIComponent(selectedStatus)}${!reset&&nextCursor?'&cursor='+encodeURIComponent(nextCursor):''}`); if(reset)reports.replaceChildren();
     for (const report of value.reports) {
       const article = node('article', '');
       article.append(node('h2', `${report.nickname ?? '삭제된 계정'} · ${report.reason}`), node('p', `${report.status} · ${new Date(report.created).toLocaleString()}`), node('pre', report.snapshot ?? '탈퇴로 공개 스냅샷이 제거됨'));
@@ -29,3 +30,4 @@ async function loadMore(reset=false) {
 }
 document.querySelector('#load').onclick=()=>loadMore(true);
 document.querySelector('#more').onclick=()=>loadMore();
+document.querySelector('#report-state').onchange=()=>{nextCursor=null;void loadMore(true);};

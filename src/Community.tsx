@@ -399,6 +399,8 @@ export function Community({
 }) {
   const account = useAccount();
   const [tab, setTab] = useState(initialTab === "mine" ? 1 : 0);
+  const activeTab = useRef(tab);
+  activeTab.current = tab;
   const [feed, setFeed] = useState<Feed>({ posts: [], nextCursor: null });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -408,6 +410,9 @@ export function Community({
   const [withdraw, setWithdraw] = useState(false);
   const [notice, setNotice] = useState("");
   const serial = useRef(0);
+  const mutationSequence = useRef(0);
+  const mutations = useRef(new Map<string, { sequence: number; post: CommunityPost | null }>());
+  const blockedAuthors = useRef(new Map<string, number>());
   const actionLock = useRef(false);
   const actionOwner = useRef(account?.id);
   useEffect(() => {
@@ -425,6 +430,7 @@ export function Community({
   }, [account?.id]);
   async function load(append = false) {
     const generation = ++serial.current;
+    const beforeMutations = mutationSequence.current;
     setBusy(true);
     setError("");
     try {
@@ -435,17 +441,22 @@ export function Community({
       const result = await communityRequest<Feed>(
         `${tab === 1 ? "/me/posts" : "/feed"}${append && feed.nextCursor ? `?cursor=${encodeURIComponent(feed.nextCursor)}` : ""}`,
       );
+      const posts = result.posts.flatMap(post => {
+        if ((blockedAuthors.current.get(post.authorId) ?? 0) > beforeMutations) return [];
+        const changed = mutations.current.get(post.id);
+        return changed && changed.sequence > beforeMutations ? changed.post ? [changed.post] : [] : [post];
+      });
       if (generation === serial.current)
         setFeed((previous) => ({
           ...result,
           posts: append
             ? [
                 ...previous.posts,
-                ...result.posts.filter(
+                ...posts.filter(
                   (p) => !previous.posts.some((old) => old.id === p.id),
                 ),
               ]
-            : result.posts,
+            : posts,
         }));
     } catch (e) {
       if (generation === serial.current) setError(message(e));
@@ -457,6 +468,8 @@ export function Community({
   // Loading is intentionally keyed by route/account; feed cursor changes must not trigger automatic refresh.
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
+    mutations.current.clear();
+    blockedAuthors.current.clear();
     setFeed({ posts: [], nextCursor: null });
     void load();
     return () => {
@@ -482,6 +495,7 @@ export function Community({
     }
   }
   async function cheer(post: CommunityPost) {
+    const requestedTab = tab;
     await action(async () => {
       if (auth.current()?.id === post.authorId)
         throw new Error("내 인증에는 응원할 수 없어요.");
@@ -490,17 +504,29 @@ export function Community({
         "PUT",
         { active: !post.cheeredByMe },
       );
+      if (activeTab.current !== requestedTab) return;
+      mutations.current.set(post.id, { sequence: ++mutationSequence.current, post: result.post });
       setFeed((f) => ({
         ...f,
-        posts: f.posts.map((p) => (p.id === post.id ? result.post : p)),
+        posts: f.posts.some(p => p.id === post.id)
+          ? f.posts.map((p) => (p.id === post.id ? result.post : p))
+          : [result.post, ...f.posts],
       }));
     });
   }
   async function remove(path: string, method: string, body?: unknown) {
     if (!menu) return;
     const target = menu;
+    const requestedTab = tab;
     await action(async () => {
       await communityRequest(path, method, body);
+      if (activeTab.current !== requestedTab) {
+        setMenu(null);
+        return;
+      }
+      const sequence = ++mutationSequence.current;
+      mutations.current.set(target.id, { sequence, post: null });
+      if (body && "active" in (body as object)) blockedAuthors.current.set(target.authorId, sequence);
       setFeed((f) => ({
         ...f,
         posts: f.posts.filter(

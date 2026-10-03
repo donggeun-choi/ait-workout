@@ -302,7 +302,7 @@ p {
   border-top: 1px solid var(--line);
   padding: 10px 16px max(34px, var(--safe-bottom));
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   z-index: 10;
 }
 .bottom-nav button {

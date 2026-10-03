@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { graniteEvent } from "@apps-in-toss/web-framework";
 import "./App.css";
 import { BannerAd } from "./BannerAd";
+import { Community, ShareWorkout } from "./Community";
 import { createSaveTracker, type SaveStatus } from "./save-state";
 import type { SetRow, Exercise, Session, Draft, Saved } from "./workout-model";
 import {
@@ -33,7 +34,7 @@ import {
   usePlatformScreen,
 } from "./platform";
 
-type Page = "home" | "workout" | "dashboard" | "routines";
+type Page = "home" | "workout" | "dashboard" | "community" | "routines";
 const uid = () => crypto.randomUUID();
 const catalog = [
   { name: "벤치 프레스", muscle: "가슴", weight: "40" },
@@ -241,6 +242,12 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
         <path d="M4 20V10m8 10V4m8 16v-7M2 21h20" />
       </>
     ),
+    community: (
+      <>
+        <path d="M4 5h16v11H9l-5 4V5Z" />
+        <path d="M8 9h8M8 12h5" />
+      </>
+    ),
     check: <path d="m5 12 4 4L19 6" />,
     plus: <path d="M12 5v14M5 12h14" />,
     close: <path d="m6 6 12 12M6 18 18 6" />,
@@ -312,7 +319,7 @@ function WorkoutApp({
   const lastRequestedRaw = useRef<string | null>(null);
   const [page, setPage] = useState<Page>(() => {
     const tab = location.hash.slice(1);
-    return tab === "workout" || tab === "dashboard" || tab === "routines"
+    return tab === "workout" || tab === "dashboard" || tab === "community" || tab === "routines"
       ? tab
       : "home";
   });
@@ -337,6 +344,15 @@ function WorkoutApp({
   const [muscle, setMuscle] = useState("전체");
   const [detail, setDetail] = useState<Session | null>(null);
   const [finished, setFinished] = useState<Session | null>(null);
+  const [shareSession, setShareSession] = useState<Session | null>(null);
+  const [communityOverlay, setCommunityOverlay] = useState(false);
+  const [communityRefresh, setCommunityRefresh] = useState(0);
+  const [communityTab, setCommunityTab] = useState<"latest" | "mine">("latest");
+  const overlayGeneration = useRef(0);
+  const overlayHistoryClosing = useRef(false);
+  const cancelledBackRestore = useRef(false);
+  const recordDiscardApproved = useRef(false);
+  const initialHistoryNormalized = useRef(false);
   const [error, setError] = useState("");
   const [period, setPeriod] = useState(28);
   const [homePeriod, setHomePeriod] = useState<"week" | "month">("week");
@@ -417,13 +433,40 @@ function WorkoutApp({
     if (lastRequestedRaw.current !== raw) void writeSnapshot(raw);
   }, [data, initial.error]);
   useEffect(() => {
+    if (shareSession) {
+      dialogRef.current?.close();
+      return;
+    }
     if (picker || detail || finished) {
       if (!history.state?.sheet) {
         history.pushState({ ...history.state, sheet: true }, "");
       }
       dialogRef.current?.showModal();
     } else dialogRef.current?.close();
-  }, [picker, detail, finished]);
+  }, [picker, detail, finished, shareSession]);
+  useEffect(() => {
+    const changed = (event: Event) => {
+      const open = Boolean((event as CustomEvent<boolean>).detail);
+      const generation = ++overlayGeneration.current;
+      if (open) {
+        setCommunityOverlay(true);
+        if (!history.state?.communityOverlay)
+          history.pushState({ ...history.state, communityOverlay: true }, "");
+      } else {
+        // StrictMode closes and reopens the same modal in one effect cycle.
+        void Promise.resolve().then(() => {
+          if (generation !== overlayGeneration.current) return;
+          setCommunityOverlay(false);
+          if (history.state?.communityOverlay) {
+            overlayHistoryClosing.current = true;
+            history.back();
+          }
+        });
+      }
+    };
+    document.addEventListener("community-overlay-change", changed);
+    return () => document.removeEventListener("community-overlay-change", changed);
+  }, []);
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const animation = mainRef.current?.animate(
@@ -442,6 +485,11 @@ function WorkoutApp({
     [],
   );
   useEffect(() => {
+    if (!initialHistoryNormalized.current) {
+      initialHistoryNormalized.current = true;
+      if (history.state?.sheet || history.state?.communityOverlay)
+        history.replaceState({ ...history.state, sheet: false, communityOverlay: false }, "");
+    }
     if (!history.state?.workoutNavigation) {
       history.replaceState({ workoutNavigation: true, page, depth: 0 }, "");
     }
@@ -453,6 +501,29 @@ function WorkoutApp({
     return () => window.removeEventListener("popstate", onBack);
   }, [page]);
   backHandler.current = () => {
+    if (cancelledBackRestore.current) {
+      cancelledBackRestore.current = false;
+      return;
+    }
+    if (overlayHistoryClosing.current) {
+      overlayHistoryClosing.current = false;
+      return;
+    }
+    if (communityOverlay) {
+      const detail = { handled: false };
+      document.dispatchEvent(new CustomEvent("community-back", { detail }));
+      if (detail.handled) return;
+    }
+    if (routineEditing || recordEditing) {
+      if (!confirm(routineEditing ? "루틴 변경 내용을 버리고 이동할까요?" : "기록 변경 내용을 버리고 닫을까요?")) {
+        cancelledBackRestore.current = true;
+        sheetBackPending.current = false;
+        history.forward();
+        return;
+      }
+      if (recordEditing) recordDiscardApproved.current = true;
+      setRoutineEditing(false);
+    }
     if (dialogRef.current?.open) {
       sheetBackPending.current = false;
       closeDialog();
@@ -460,7 +531,7 @@ function WorkoutApp({
     }
     const next = location.hash.slice(1);
     const destination: Page =
-      next === "workout" || next === "dashboard" || next === "routines"
+      next === "workout" || next === "dashboard" || next === "community" || next === "routines"
         ? next
         : "home";
     setPage(destination);
@@ -474,18 +545,28 @@ function WorkoutApp({
   };
   const platformBack = useRef<() => void>(() => {});
   platformBack.current = () => {
-    if (dialogRef.current?.open) closeDialog();
+    if (communityOverlay) {
+      if (history.state?.communityOverlay) history.back();
+      else document.dispatchEvent(new CustomEvent("community-back", { detail: { handled: false } }));
+    } else if (dialogRef.current?.open && history.state?.sheet) history.back();
+    else if (dialogRef.current?.open) closeDialog();
+    else if (routineEditing && !canGoBack) {
+      if (confirm("루틴 변경 내용을 버리고 이동할까요?")) {
+        setRoutineEditing(false);
+        history.back();
+      }
+    }
     else if (page === "routines" && !canGoBack) leaveRoutines();
     else history.back();
   };
-  const hasSheet = !!(picker || detail || finished);
+  const hasSheet = !!(picker || detail || finished || shareSession);
   useEffect(() => {
-    if (!hasSheet && !canGoBack && page !== "routines") return;
+    if (!hasSheet && !communityOverlay && !routineEditing && !canGoBack && page !== "routines") return;
     return graniteEvent.addEventListener("backEvent", {
       onEvent: () => platformBack.current(),
       onError: () => setError("뒤로 이동하지 못했어요. 다시 시도해 주세요."),
     });
-  }, [hasSheet, canGoBack, page]);
+  }, [hasSheet, communityOverlay, routineEditing, canGoBack, page]);
   function leaveRoutines() {
     setPendingRoutine(selectedRoutine);
     if (history.state?.depth > 0) history.back();
@@ -522,7 +603,8 @@ function WorkoutApp({
   }
   function closeDialog() {
     if (sheetClosing.current || transactionPending.current) return;
-    if (recordEditing && !confirm("기록 변경 내용을 버리고 닫을까요?")) return;
+    if (recordEditing && !recordDiscardApproved.current && !confirm("기록 변경 내용을 버리고 닫을까요?")) return;
+    recordDiscardApproved.current = false;
     setRecordEditing(false);
     if (history.state?.sheet) {
       if (sheetBackPending.current) return;
@@ -1397,6 +1479,7 @@ function WorkoutApp({
                     draft: current.draft
                       ? {
                           ...current.draft,
+                          exercises: current.draft.exercises.map(exercise => ({ ...exercise, restSeconds })),
                           restUntil:
                             restSeconds === 0 ? null : current.draft.restUntil,
                         }
@@ -1824,13 +1907,23 @@ function WorkoutApp({
           <ExerciseTrends sessions={data.sessions} />
         )}
         {page === "home" && !demo && (
-          <DataManagement data={data} persist={persist} />
+          <DataManagement data={data} persist={persist} reservedNames={catalog.map(x => x.name)} />
+        )}
+        {page === "community" && (
+          <Community
+            key={communityTab}
+            sessions={data.sessions}
+            onWorkout={() => navigate("workout")}
+            onShare={setShareSession}
+            refreshKey={communityRefresh}
+            initialTab={communityTab}
+          />
         )}
         {page === "dashboard" &&
           data.sessions.length > 0 &&
           !draft &&
           !demo &&
-          !hasSheet && <BannerAd />}
+          !hasSheet && !communityOverlay && <BannerAd />}
       </main>
       {page !== "routines" && (
         <nav className="bottom-nav" aria-label="주요 메뉴">
@@ -1839,6 +1932,7 @@ function WorkoutApp({
               { id: "home", label: "홈" },
               { id: "workout", label: "운동" },
               { id: "dashboard", label: "대시보드" },
+              { id: "community", label: "커뮤니티" },
             ] as const
           ).map((tab) => (
             <button
@@ -2117,6 +2211,11 @@ function WorkoutApp({
                       onClose={closeDialog}
                     />
                   )}
+                  {!demo && !recordEditing && (
+                    <Button variant="weak" display="block" onClick={() => setShareSession(s)}>
+                      운동 인증하기
+                    </Button>
+                  )}
                   <Button
                     display="block"
                     onClick={() => {
@@ -2131,6 +2230,28 @@ function WorkoutApp({
             })()}
         </div>
       </dialog>
+      {shareSession && (
+        <ShareWorkout
+          key={shareSession.id}
+          session={shareSession}
+          onClose={() => setShareSession(null)}
+          onPublished={() => {
+            setShareSession(null);
+            setDetail(null);
+            setFinished(null);
+            setCommunityTab("mine");
+            setCommunityRefresh(value => value + 1);
+            history.replaceState(
+              { workoutNavigation: true, page: "community", depth: (history.state?.depth ?? 0) + 1 },
+              "",
+              "#community",
+            );
+            setCanGoBack(true);
+            setPage("community");
+            mainRef.current?.scrollTo(0, 0);
+          }}
+        />
+      )}
     </div>
   );
 }

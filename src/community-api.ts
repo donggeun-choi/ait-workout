@@ -131,7 +131,8 @@ export async function communityRequest<T>(
   method = "GET",
   body?: unknown,
 ): Promise<T> {
-  const capturedToken = token;
+  const publicMetadata = path === "/policy" || path === "/health";
+  const capturedToken = publicMetadata ? null : token;
   const configuredBase = (import.meta.env.VITE_COMMUNITY_API_URL ?? "")
     .trim()
     .replace(/\/$/, "");
@@ -164,10 +165,10 @@ export async function communityRequest<T>(
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     const code = data?.error?.code ?? "UNAVAILABLE";
-    if (response.status === 401 && capturedToken === token) auth.clear();
+    if (!publicMetadata && response.status === 401 && capturedToken === token) auth.clear();
     throw new CommunityError(code, errorText(code));
   }
-  if (capturedToken !== token)
+  if (!publicMetadata && capturedToken !== token)
     throw new CommunityError(
       "ACCOUNT_CHANGED",
       "계정이 바뀌었어요. 다시 시도해 주세요.",

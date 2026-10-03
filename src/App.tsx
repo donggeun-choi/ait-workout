@@ -13,7 +13,20 @@ import "./App.css";
 import { BannerAd } from "./BannerAd";
 import { createSaveTracker, type SaveStatus } from "./save-state";
 import type { SetRow, Exercise, Session, Draft, Saved } from "./workout-model";
-import { prepareRepeat } from "./workout-model";
+import {
+  PersonalRoutines,
+  RecordActions,
+  DataManagement,
+  ExerciseTrends,
+  CustomExerciseCreator,
+} from "./PersonalTools";
+import {
+  fillPrevious,
+  previousExercise,
+  validMetadata,
+  validSession,
+  prepareRepeat,
+} from "./workout-model";
 import {
   completedSetFeedback,
   recordStorage,
@@ -156,6 +169,7 @@ function load(raw: string | null): { data: Saved; error: boolean } {
     if (!raw) return { data: { sessions: [], draft: null }, error: false };
     const data = JSON.parse(raw);
     if (
+      !validMetadata(data) ||
       !Array.isArray(data.sessions) ||
       !data.sessions.every(
         (s: Session) =>
@@ -166,7 +180,8 @@ function load(raw: string | null): { data: Saved; error: boolean } {
           Number.isFinite(Date.parse(s.date)) &&
           Number.isFinite(s.seconds) &&
           typeof s.note === "string" &&
-          validExercises(s.exercises),
+          validExercises(s.exercises) &&
+          validSession(s),
       ) ||
       (data.draft !== null &&
         !(
@@ -280,8 +295,17 @@ function Icon({ name, size = 20 }: { name: string; size?: number }) {
     </Asset.ContentIcon>
   );
 }
-function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
+function WorkoutApp({
+  initial,
+  onDataChange,
+}: {
+  initial: ReturnType<typeof load>;
+  onDataChange: (value: ReturnType<typeof load>) => void;
+}) {
   const [data, setData] = useState<Saved>(initial.data);
+  useEffect(() => {
+    onDataChange({ data, error: initial.error });
+  }, [data, initial.error, onDataChange]);
   const [storageError, setStorageError] = useState(initial.error);
   const saveTracker = useRef(createSaveTracker());
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
@@ -292,6 +316,14 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
       ? tab
       : "home";
   });
+  const [recordEditing, setRecordEditing] = useState(false);
+  const [routineEditing, setRoutineEditing] = useState(false);
+  const [selectedPersonalId, setSelectedPersonalId] = useState<string | null>(
+    null,
+  );
+  const selectedPersonal = data.routines?.find(
+    (x) => x.id === selectedPersonalId,
+  );
   const [selectedRoutine, setSelectedRoutine] = useState<number | null>(null);
   const [selectedPreviousId, setSelectedPreviousId] = useState<string | null>(
     null,
@@ -317,6 +349,37 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
   const backHandler = useRef<() => void>(() => {});
   const [canGoBack, setCanGoBack] = useState(false);
   const screenKey = `${page}:${page === "workout" && !!data.draft}`;
+  const allCatalog = [
+    ...catalog,
+    ...(data.customExercises ?? []).map((x) => ({
+      name: x.name,
+      muscle: x.muscle,
+      weight: "0",
+    })),
+  ];
+  function makeCurrentExercise(name: string): Exercise {
+    const item = allCatalog.find((x) => x.name === name);
+    const previous = previousExercise(data.sessions, name)?.exercise;
+    return {
+      id: uid(),
+      name,
+      muscle: item?.muscle ?? "기타",
+      sets: Array.from({ length: 3 }, (_, i) => ({
+        id: uid(),
+        weight:
+          previous?.sets.filter((x) => x.done)[
+            i % previous.sets.filter((x) => x.done).length
+          ]?.weight ??
+          item?.weight ??
+          "0",
+        reps:
+          previous?.sets.filter((x) => x.done)[
+            i % previous.sets.filter((x) => x.done).length
+          ]?.reps ?? "10",
+        done: false,
+      })),
+    };
+  }
   const sessions = demo ? examples : data.sessions;
   const draft = data.draft;
   const recentSessions = [...data.sessions]
@@ -438,6 +501,8 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
     }
   }
   function navigate(next: Page) {
+    if (routineEditing && !confirm("루틴 변경 내용을 버리고 이동할까요?"))
+      return;
     setError("");
     if (next === "routines") setPendingRoutine(selectedRoutine);
     if (next !== page) {
@@ -456,7 +521,9 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
     mainRef.current?.scrollTo(0, 0);
   }
   function closeDialog() {
-    if (sheetClosing.current) return;
+    if (sheetClosing.current || transactionPending.current) return;
+    if (recordEditing && !confirm("기록 변경 내용을 버리고 닫을까요?")) return;
+    setRecordEditing(false);
     if (history.state?.sheet) {
       if (sheetBackPending.current) return;
       sheetBackPending.current = true;
@@ -519,18 +586,38 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
       return false;
     }
   }
+  const transactionPending = useRef(false);
   async function persist(next: Saved) {
+    if (transactionPending.current) return false;
     if (initial.error) {
       setError(
         "저장된 기록을 읽지 못했어요. 페이지를 새로고침해 다시 시도해 주세요.",
       );
       return false;
     }
-    if (await writeSnapshot(JSON.stringify(next))) {
-      setData(next);
-      return true;
-    } else {
+    transactionPending.current = true;
+    const previousSaving = saving.current;
+    saving.current = true;
+    setIsSaving(true);
+    mainRef.current?.setAttribute("inert", "");
+    dialogRef.current
+      ?.querySelector(".sheet-content")
+      ?.setAttribute("inert", "");
+    try {
+      const snapshot = structuredClone(next);
+      if (await writeSnapshot(JSON.stringify(snapshot))) {
+        setData(snapshot);
+        return true;
+      }
       return false;
+    } finally {
+      transactionPending.current = false;
+      saving.current = previousSaving;
+      setIsSaving(previousSaving);
+      mainRef.current?.toggleAttribute("inert", previousSaving);
+      dialogRef.current
+        ?.querySelector(".sheet-content")
+        ?.removeAttribute("inert");
     }
   }
   function updateDraft(update: (d: Draft) => Draft) {
@@ -549,7 +636,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
         draft: {
           name,
           started: Date.now(),
-          exercises: names.map(makeExercise),
+          exercises: names.map(makeCurrentExercise),
           note: "",
           restUntil: null,
         },
@@ -575,7 +662,17 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
     if (!row.done) completedSetFeedback();
     updateDraft((d) => ({
       ...d,
-      restUntil: !row.done ? Date.now() + 90000 : d.restUntil,
+      restUntil: !row.done
+        ? (d.exercises.find((x) => x.id === exerciseId)?.restSeconds ??
+          data.settings?.restSeconds ??
+          90)
+          ? Date.now() +
+            (d.exercises.find((x) => x.id === exerciseId)?.restSeconds ??
+              data.settings?.restSeconds ??
+              90) *
+              1000
+          : null
+        : d.restUntil,
       exercises: d.exercises.map((x) =>
         x.id === exerciseId
           ? {
@@ -606,7 +703,13 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
     };
     saving.current = true;
     setIsSaving(true);
-    if (await persist({ sessions: [session, ...data.sessions], draft: null })) {
+    if (
+      await persist({
+        ...data,
+        sessions: [session, ...data.sessions],
+        draft: null,
+      })
+    ) {
       setError("");
       setFinished(session);
     }
@@ -673,7 +776,10 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
     ? Math.max(0, Math.floor((now - draft.started) / 1000))
     : 0;
   const rest = draft?.restUntil
-    ? Math.min(90, Math.max(0, Math.ceil((draft.restUntil - now) / 1000)))
+    ? Math.max(
+        0,
+        Math.ceil((draft.restUntil - Math.max(now, Date.now())) / 1000),
+      )
     : 0;
   function sessionRow(session: Session) {
     return (
@@ -968,19 +1074,35 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
             <section className="prepared-workout" aria-label="시작할 운동">
               <p className="prepared-label">시작할 운동</p>
               <h2>
-                {selectedPrevious
-                  ? selectedPrevious.name
-                  : selectedRoutine === null
-                    ? "자유 운동"
-                    : routines[selectedRoutine].name}
+                {selectedPersonal
+                  ? selectedPersonal.name
+                  : selectedPrevious
+                    ? selectedPrevious.name
+                    : selectedRoutine === null
+                      ? "자유 운동"
+                      : routines[selectedRoutine].name}
               </h2>
               <p className="prepared-description">
-                {selectedPrevious
-                  ? `${selectedPrevious.exercises.length}개 운동 · ${countSets(selectedPrevious.exercises)}세트 · ${dateLabel(selectedPrevious.date)} 기록`
-                  : selectedRoutine === null
-                    ? "종목을 직접 추가하며 기록해요"
-                    : `${routines[selectedRoutine].names.length}개 운동 · ${routines[selectedRoutine].names.length * 3}세트`}
+                {selectedPersonal
+                  ? `${selectedPersonal.exercises.length}개 운동 · ${selectedPersonal.exercises.reduce((n, x) => n + x.sets.length, 0)}세트`
+                  : selectedPrevious
+                    ? `${selectedPrevious.exercises.length}개 운동 · ${countSets(selectedPrevious.exercises)}세트 · ${dateLabel(selectedPrevious.date)} 기록`
+                    : selectedRoutine === null
+                      ? "종목을 직접 추가하며 기록해요"
+                      : `${routines[selectedRoutine].names.length}개 운동 · ${routines[selectedRoutine].names.length * 3}세트`}
               </p>
+              {selectedPersonal && (
+                <div className="prepared-exercises">
+                  {selectedPersonal.exercises.map((x, i) => (
+                    <div key={x.id}>
+                      <span className="exercise-order">{i + 1}</span>
+                      <span>
+                        {x.name} · {x.sets.length}세트
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {selectedPrevious && (
                 <div className="prepared-exercises">
                   {selectedPrevious.exercises.map((exercise, i) => (
@@ -1035,8 +1157,11 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                   {[null, ...recentSessions].map((session, index, options) => {
                     const selected = session
                       ? selectedPreviousId === session.id
-                      : selectedPreviousId === null && selectedRoutine === null;
+                      : selectedPreviousId === null &&
+                        selectedRoutine === null &&
+                        !selectedPersonal;
                     const select = (next: Session | null) => {
+                      setSelectedPersonalId(null);
                       setSelectedPreviousId(next?.id ?? null);
                       setSelectedRoutine(null);
                     };
@@ -1112,6 +1237,19 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                   : "기본 무게와 횟수는 시작 후 조정할 수 있어요."}
             </p>
           </div>
+        )}
+        {page === "workout" && !draft && (
+          <PersonalRoutines
+            data={data}
+            persist={persist}
+            catalog={allCatalog}
+            onEditingChange={setRoutineEditing}
+            onStart={(routine) => {
+              setSelectedPersonalId(routine.id);
+              setSelectedPreviousId(null);
+              setSelectedRoutine(null);
+            }}
+          />
         )}
         {page === "routines" && (
           <div className="routine-library">
@@ -1246,6 +1384,33 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                 <span>{number(volume(draft.exercises))}kg</span>
               </div>
             </section>
+            <label className="rest-setting">
+              기본 휴식{" "}
+              <select
+                aria-label="기본 휴식"
+                value={data.settings?.restSeconds ?? 90}
+                onChange={(e) => {
+                  const restSeconds = Number(e.target.value);
+                  setData((current) => ({
+                    ...current,
+                    settings: { restSeconds },
+                    draft: current.draft
+                      ? {
+                          ...current.draft,
+                          restUntil:
+                            restSeconds === 0 ? null : current.draft.restUntil,
+                        }
+                      : null,
+                  }));
+                }}
+              >
+                {[0, 60, 90, 120].map((n) => (
+                  <option key={n} value={n}>
+                    {n ? `${n}초` : "끄기"}
+                  </option>
+                ))}
+              </select>
+            </label>
             {draft.restUntil !== null && (
               <div className="rest-card" role="status">
                 <div>
@@ -1254,6 +1419,18 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                     {rest > 0 ? `휴식 ${clock(rest)}` : "휴식이 끝났어요"}
                   </strong>
                 </div>
+                <button
+                  className="plain-button"
+                  onClick={() =>
+                    updateDraft((d) => ({
+                      ...d,
+                      restUntil:
+                        Math.max(Date.now(), d.restUntil ?? Date.now()) + 30000,
+                    }))
+                  }
+                >
+                  +30초
+                </button>
                 <button
                   className="plain-button"
                   onClick={() =>
@@ -1298,7 +1475,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                         </span>
                       }
                       onClick={() => {
-                        const added = makeExercise(exercise.name);
+                        const added = makeCurrentExercise(exercise.name);
                         updateDraft((current) =>
                           current.exercises.length
                             ? current
@@ -1321,15 +1498,71 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                   <button
                     className="icon-button"
                     aria-label={`${ex.name} 삭제`}
-                    onClick={() =>
+                    onClick={() => {
+                      if (
+                        ex.sets.some((row) => row.done) &&
+                        !confirm(`${ex.name}의 완료한 세트도 삭제할까요?`)
+                      )
+                        return;
                       updateDraft((d) => ({
                         ...d,
                         exercises: d.exercises.filter((x) => x.id !== ex.id),
-                      }))
-                    }
+                      }));
+                    }}
                   >
                     <Icon name="close" size={19} />
                   </button>
+                </div>
+                <div className="exercise-tools">
+                  <p className="meta">
+                    {(() => {
+                      const past = previousExercise(data.sessions, ex.name);
+                      const row = past?.exercise.sets.find((x) => x.done);
+                      return past && row
+                        ? `지난 운동 ${dateLabel(past.session.date)} · ${row.weight}kg × ${row.reps}회`
+                        : "첫 기록이에요";
+                    })()}
+                  </p>
+                  <Button
+                    size="small"
+                    onClick={() =>
+                      updateDraft((d) => ({
+                        ...d,
+                        exercises: d.exercises.map((x) =>
+                          x.id === ex.id ? fillPrevious(x, data.sessions) : x,
+                        ),
+                      }))
+                    }
+                  >
+                    빈 입력에 지난 값
+                  </Button>
+                  {[-1, 1].map((direction) => (
+                    <Button
+                      key={direction}
+                      size="small"
+                      disabled={
+                        draft.exercises.findIndex((x) => x.id === ex.id) +
+                          direction <
+                          0 ||
+                        draft.exercises.findIndex((x) => x.id === ex.id) +
+                          direction >=
+                          draft.exercises.length
+                      }
+                      onClick={() =>
+                        updateDraft((d) => {
+                          const items = [...d.exercises];
+                          const i = items.findIndex((x) => x.id === ex.id);
+                          [items[i], items[i + direction]] = [
+                            items[i + direction],
+                            items[i],
+                          ];
+                          return { ...d, exercises: items };
+                        })
+                      }
+                    >
+                      {direction === -1 ? "위로 이동" : "아래로 이동"}
+                    </Button>
+                  ))}
                 </div>
                 <div className="set-grid set-labels">
                   <span>세트</span>
@@ -1351,7 +1584,12 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                       max="2000"
                       step="0.5"
                       value={s.weight}
-                      disabled={s.done}
+                      disabled={
+                        s.done ||
+                        data.customExercises?.some(
+                          (x) => x.name === ex.name && x.mode === "bodyweight",
+                        )
+                      }
                       onChange={(e) =>
                         updateDraft((d) => ({
                           ...d,
@@ -1582,7 +1820,17 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
             </p>
           </>
         )}
-        {page === "dashboard" && !draft && !demo && <BannerAd />}
+        {page === "dashboard" && !demo && (
+          <ExerciseTrends sessions={data.sessions} />
+        )}
+        {page === "home" && !demo && (
+          <DataManagement data={data} persist={persist} />
+        )}
+        {page === "dashboard" &&
+          data.sessions.length > 0 &&
+          !draft &&
+          !demo &&
+          !hasSheet && <BannerAd />}
       </main>
       {page !== "routines" && (
         <nav className="bottom-nav" aria-label="주요 메뉴">
@@ -1608,7 +1856,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
           ))}
         </nav>
       )}
-      {(page === "workout" || page === "routines") && (
+      {!routineEditing && (page === "workout" || page === "routines") && (
         <BottomCTA.Single
           disabled={isSaving || initial.error}
           fixed
@@ -1629,13 +1877,14 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
             if (saving.current || initial.error) return;
             if (page === "routines") {
               setSelectedPreviousId(null);
+              setSelectedPersonalId(null);
               setSelectedRoutine(pendingRoutine);
               if (draft && !draft.exercises.length && pendingRoutine !== null) {
                 const routine = routines[pendingRoutine];
                 updateDraft((current) => ({
                   ...current,
                   name: routine.name,
-                  exercises: routine.names.map(makeExercise),
+                  exercises: routine.names.map(makeCurrentExercise),
                 }));
               }
               leaveRoutines();
@@ -1643,7 +1892,31 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
               setPicker(true);
               setMuscle("전체");
             } else if (draft) finish();
-            else if (selectedPrevious) {
+            else if (selectedPersonal) {
+              setData((current) =>
+                current.draft
+                  ? current
+                  : {
+                      ...current,
+                      draft: {
+                        name: selectedPersonal.name,
+                        started: Date.now(),
+                        note: "",
+                        restUntil: null,
+                        exercises: selectedPersonal.exercises.map((x) => ({
+                          ...x,
+                          id: uid(),
+                          sets: x.sets.map((row) => ({
+                            ...row,
+                            id: uid(),
+                            done: false,
+                          })),
+                        })),
+                      },
+                    },
+              );
+              navigate("workout");
+            } else if (selectedPrevious) {
               setDemo(false);
               setError("");
               const started = Date.now();
@@ -1668,11 +1941,13 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                 : isSaving
                   ? "기록 저장 중"
                   : "운동 마치고 저장"
-              : selectedPrevious
-                ? "지난 운동 다시 시작"
-                : selectedRoutine === null
-                  ? "자유 운동 시작"
-                  : `${routines[selectedRoutine].name} 시작`}
+              : selectedPersonal
+                ? `${selectedPersonal.name} 시작`
+                : selectedPrevious
+                  ? "지난 운동 다시 시작"
+                  : selectedRoutine === null
+                    ? "자유 운동 시작"
+                    : `${routines[selectedRoutine].name} 시작`}
         </BottomCTA.Single>
       )}
       <dialog
@@ -1730,8 +2005,20 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                   ),
                 )}
               </div>
+              <CustomExerciseCreator
+                data={data}
+                persist={persist}
+                catalog={allCatalog}
+                onAdded={(exercise) => {
+                  updateDraft((d) => ({
+                    ...d,
+                    exercises: [...d.exercises, exercise],
+                  }));
+                  closeDialog();
+                }}
+              />
               <div className="picker-list">
-                {catalog
+                {allCatalog
                   .filter(
                     (x) =>
                       x.name.includes(query) &&
@@ -1745,7 +2032,10 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                         if (sheetClosing.current) return;
                         updateDraft((d) => ({
                           ...d,
-                          exercises: [...d.exercises, makeExercise(x.name)],
+                          exercises: [
+                            ...d.exercises,
+                            makeCurrentExercise(x.name),
+                          ],
                         }));
                         closeDialog();
                       }}
@@ -1757,7 +2047,7 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                       <Icon name="plus" size={20} />
                     </button>
                   ))}
-                {!catalog.some(
+                {!allCatalog.some(
                   (x) =>
                     x.name.includes(query) &&
                     (muscle === "전체" || x.muscle === muscle),
@@ -1813,6 +2103,20 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
                         )}
                     </p>
                   )}
+                  {!demo && (
+                    <RecordActions
+                      key={s.id}
+                      data={data}
+                      persist={persist}
+                      session={s}
+                      onEditingChange={setRecordEditing}
+                      onChange={(updated) => {
+                        if (detail) setDetail(updated);
+                        else setFinished(updated);
+                      }}
+                      onClose={closeDialog}
+                    />
+                  )}
                   <Button
                     display="block"
                     onClick={() => {
@@ -1830,12 +2134,11 @@ function WorkoutApp({ initial }: { initial: ReturnType<typeof load> }) {
     </div>
   );
 }
-let boot: Promise<ReturnType<typeof load>> | undefined;
 function App() {
   const [initial, setInitial] = useState<ReturnType<typeof load> | null>(null);
   useEffect(() => {
     let active = true;
-    boot ??= recordStorage
+    const boot = recordStorage
       .read()
       .then(async ({ raw, migrate }) => {
         const result = load(raw);
@@ -1857,7 +2160,7 @@ function App() {
     };
   }, []);
   return initial ? (
-    <WorkoutApp initial={initial} />
+    <WorkoutApp initial={initial} onDataChange={setInitial} />
   ) : (
     <div className="app-shell">
       <main role="status">운동 기록을 불러오고 있어요.</main>

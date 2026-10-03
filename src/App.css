@@ -1208,3 +1208,94 @@ textarea {
 .theme-options > button {
   min-height: 44px;
 }
+
+.personal-tools {
+  margin: 24px 0;
+  padding: 0 4px;
+  word-break: keep-all;
+}
+.personal-tools h2,
+.personal-tools h3 {
+  font-size: 17px;
+  margin: 16px 0;
+}
+.personal-tools p {
+  font-size: 15px;
+  line-height: 1.6;
+}
+.personal-tools label {
+  display: block;
+  font-size: 15px;
+  margin: 12px 0;
+}
+.personal-tools input,
+.personal-tools select,
+.rest-setting select {
+  min-height: 44px;
+  font-size: 16px;
+  max-width: 100%;
+  border: 1px solid #d1d6db;
+  border-radius: 8px;
+  background: white;
+  padding: 8px;
+  color: #333d4b;
+}
+.personal-tools label > input,
+.personal-tools label > select {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+}
+.personal-tools button {
+  margin: 4px 4px 4px 0;
+  min-height: 44px;
+}
+.personal-editor {
+  border-top: 1px solid #e5e8eb;
+  margin-top: 16px;
+}
+.personal-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.personal-input-row input {
+  width: 80px;
+}
+.personal-input-row label {
+  flex: 1;
+  min-width: 80px;
+}
+.personal-input-row label input {
+  width: 100%;
+}
+.trend-table {
+  overflow: auto;
+}
+.trend-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.trend-table th,
+.trend-table td {
+  padding: 12px 8px;
+  text-align: left;
+  border-bottom: 1px solid #e5e8eb;
+  white-space: nowrap;
+}
+.rest-setting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  margin: 12px 0;
+}
+.exercise-tools {
+  margin-bottom: 12px;
+}
+.exercise-tools button {
+  min-height: 44px;
+  margin-right: 4px;
+}
